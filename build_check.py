@@ -23,6 +23,10 @@ def check(folder):
                          placement=[dict(zoom=1.2,x=.1,y=0),dict(zoom=1,x=0,y=0)]),
                     dict(name='Studio Depth Test',mode='depth',images=[images[0],str(depth.resolve())],
                          depth=dict(strength=.04,convergence=.5,bands=.65))]
+        gif = folder/'animation.gif'
+        Image.new('RGB',(80,40),'red').save(gif,save_all=True,
+            append_images=[Image.new('RGB',(80,40),'blue')],duration=[80,120],loop=0)
+        projects.append(dict(name='Studio Animation Test',mode='gif',images=[str(gif.resolve()),None]))
         records = []
         original = engine.deck_archive.resource
         def record(template,index,name,raw,cas,**kwargs):
@@ -32,12 +36,12 @@ def check(folder):
         output = engine.export_pack(projects,folder/'Studio Testing Pack.fbmod')
         engine.deck_archive.resource = original
         header,blobs = engine.split_mod(output.read_bytes())
-        assert len(blobs) == 41
+        assert len(blobs) == 55
         assert b'reskate-cosmetic-shader:v1' not in header
         assert b'reskate-cosmetic-shader-lookup:v1' not in header
-        assert header.count(b'reskate-cosmetic-dependency:v1') == 4
+        assert header.count(b'reskate-cosmetic-dependency:v1') == 5
         textures = [(name,rid) for name,raw,rid in records if rid is not None and name.startswith(('thumbnail/tool/','characters/customization/reskate/board_bottomart/'))]
-        assert len(textures) == 6 and len(set(rid for _,rid in textures)) == 6
+        assert len(textures) == 9 and len(set(rid for _,rid in textures)) == 9
         assert all(rid&3 != 2 for _,rid in textures)
         for name,rid in textures:
             raw = next(raw for other,raw,resource_id in records if other==name and resource_id is None and raw.startswith(b'RIFF'))

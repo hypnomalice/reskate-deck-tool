@@ -8,6 +8,8 @@ import ispc_texcomp as tc
 import deck_archive
 import depth_views
 import layer_atlas
+import animation
+import animation_texture
 
 def artwork(path, fit="Stretch", background="#ffffff"):
     if isinstance(path,Image.Image):return path.convert('RGB').resize((512,2048),Image.Resampling.LANCZOS)
@@ -28,7 +30,7 @@ def atlas(a,b,fit="Stretch",background="#ffffff"):
         ImageDraw.Draw(im).rectangle((x*128,0,x*128+127,63),fill=color)
     return im
 
-def thumbnail(a,b,custom=None,fit="Stretch",background="#ffffff",size=768):
+def thumbnail(a,b,custom=None,fit="Stretch",background="#ffffff",size=768,label="LENTICULAR"):
     if custom:
         with Image.open(custom) as source:
             im=ImageOps.exif_transpose(source).convert('RGBA')
@@ -43,7 +45,7 @@ def thumbnail(a,b,custom=None,fit="Stretch",background="#ffffff",size=768):
     font_size=max(6,round(size*.061))
     try:font=ImageFont.truetype('C:/Windows/Fonts/segoeuib.ttf',font_size)
     except OSError:font=ImageFont.load_default(size=font_size)
-    ImageDraw.Draw(out).text((size//2,round(size*.915)),'LENTICULAR',font=font,anchor='mm',fill=(255,255,255,255),stroke_width=max(1,round(size/384)),stroke_fill=(20,20,20,230))
+    ImageDraw.Draw(out).text((size//2,round(size*.915)),label,font=font,anchor='mm',fill=(255,255,255,255),stroke_width=max(1,round(size/384)),stroke_fill=(20,20,20,230))
     return out
 
 def encode_thumbnail(im):
@@ -129,6 +131,8 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
             originals = project['images']
             if Path(dest).resolve() in [Path(path).resolve() for path in originals if path]:
                 raise ValueError('Choose a separate output file.')
+            if project.get('mode') == 'gif':
+                continue
             placements = project.get('placement')
             background_fit = project.get('background_fit') if project.get('mode')=='layers' else None
             if not background_fit and (not placements or all(all(float(p.get(k,d)) == d for k,d in [('zoom',1),('x',0),('y',0)]) for p in placements)):
@@ -161,11 +165,17 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         names.add(name.casefold())
         a,b=project['images'];fit=project.get('fit','Stretch');background=project.get('background','#ffffff');custom=project.get('thumbnail')
         mode=project.get('mode','classic')
-        if mode not in ['classic','depth','layers']:raise ValueError('Unsupported lenticular mode.')
+        if mode not in ['classic','depth','layers','gif']:raise ValueError('Unsupported lenticular mode.')
         if fit not in ['Stretch','Crop to fill','Fit entire image']:raise ValueError('Choose a supported image sizing option.')
         if dest in [Path(p).resolve() for p in [a,b,custom] if p]+[(ROOT/'engine/template.fbmod').resolve()]:raise ValueError('Choose a separate output file.')
         progress(f'Deck {number} of {len(projects)}: {name}')
-        if mode in ['depth','layers']:
+        if mode == 'gif':
+            clip=animation.load(a)
+            packed,metadata=animation_texture.atlas(clip,background=background,placement=(project.get('placement') or [{}])[0])
+            texture=encode(packed,progress)
+            first=animation_texture.preview_frame(clip,0,background,(project.get('placement') or [{}])[0])
+            thumb=thumbnail(first,first,custom,background=background,label='ANIMATED')
+        elif mode in ['depth','layers']:
             settings=project.get('depth',{})
             if mode=='layers':
                 front=depth_views.layer_image(a,fit)
@@ -184,7 +194,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         else:
             texture=encode(atlas(a,b,fit,background),progress)
             thumb=thumbnail(a,b,custom,fit,background)
-        decks.append(dict(name=name,mode='depth' if mode=='layers' else mode,texture=texture,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
+        decks.append(dict(name=name,mode='depth' if mode=='layers' else 'classic' if mode=='gif' else mode,texture=texture,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
     result=deck_archive.build(decks,raw_cas,title,author.strip(),independent_shader=True)
     check_head,check_blobs=split_mod(result)
     assert len(check_blobs)==14*len(projects)+13

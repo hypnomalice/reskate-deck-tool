@@ -4,6 +4,9 @@ import queue
 import threading
 import traceback
 import random
+import time
+import animation
+import animation_texture
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
@@ -13,7 +16,7 @@ import image_placement
 from tutorials import open_guide
 
 BG, FIELD, TEXT, MUTED = '#242629', '#33373d', '#e3e5e8', '#aeb4be'
-MODES = {'classic': 'Lenticular', 'depth': '3D (depth map)', 'layers': '3D (foreground/background)'}
+MODES = {'classic': 'Lenticular', 'depth': '3D (depth map)', 'layers': '3D (foreground/background)', 'gif': 'Animated GIF'}
 APP_NAME = 'ReSkate Deck Tool - Beta'
 QUOTES = [
     'PM died for this.',
@@ -78,6 +81,8 @@ class Tooltip:
 class Creator:
     def __init__(self, root):
         self.root, self.paths, self.images = root, [None, None], [None, None]
+        self.animation_clip, self.animation_path, self.animation_job = None, None, None
+        self.animation_start = time.monotonic()
         self.events, self.busy = queue.Queue(), False
         self.thumbnail_path, self.depth_preview, self.preview_job = None, None, None
         self.background, self.wood_colour = '#ffffff', '#b98a56'
@@ -183,7 +188,7 @@ class Creator:
         row = ttk.Frame(right)
         row.pack(fill='x', pady=(12, 5))
         ttk.Label(row, text='Effect').pack(side='left')
-        self.help(row, 'Lenticular: two images flip with viewing angle.\n\n3D (depth map): a colour image and matching grayscale depth map create depth. White is near; black is far.\n\n3D (foreground/background): a transparent foreground moves over a complete background.')
+        self.help(row, 'Lenticular: two images flip with viewing angle.\n\n3D (depth map): a colour image and matching grayscale depth map create depth. White is near; black is far.\n\n3D (foreground/background): a transparent foreground moves over a complete background.\n\nAnimated GIF: a GIF, animated PNG or WebP loops on the underside, centred without stretching. Up to 128 frames and 40.95 seconds. Frames may be reduced in resolution to fit. Older lenticular mods need a renderer compatibility update.')
         modes = ttk.Combobox(right, textvariable=self.mode, values=list(MODES.values()), state='readonly', width=29)
         modes.pack(fill='x')
         modes.bind('<<ComboboxSelected>>', self.change_mode)
@@ -203,6 +208,7 @@ class Creator:
         self.fit_title.pack(anchor='w', pady=(12, 5))
         fit = ttk.Combobox(right, textvariable=self.fit, values=['Stretch', 'Crop to fill', 'Fit entire image'], state='readonly')
         fit.pack(fill='x')
+        self.fit_box = fit
         fit.bind('<<ComboboxSelected>>', self.refresh_images)
         self.background_fit_row = ttk.Frame(self.image_contents[1])
         background_box = ttk.Combobox(self.background_fit_row,textvariable=self.background_fit,values=['Crop to fill','Fit entire image'],state='readonly',width=16)
@@ -229,7 +235,7 @@ class Creator:
         buttons.pack(side='left', fill='x', expand=True)
         ttk.Button(buttons, text='Custom image…', command=self.choose_thumbnail).pack(fill='x')
         ttk.Button(buttons, text='Use automatic', command=self.reset_thumbnail).pack(fill='x', pady=5)
-        self.thumb_label = ttk.Label(right, text='Automatic: both images + LENTICULAR', wraplength=290)
+        self.thumb_label = ttk.Label(right, text='Automatic: animation + ANIMATED' if self.is_gif() else 'Automatic: both images + LENTICULAR', wraplength=290)
         self.thumb_label.pack(anchor='w', pady=5)
         footer = ttk.Frame(root, padding=(18, 12))
         footer.grid(row=2, column=0, sticky='ew')
@@ -291,14 +297,35 @@ class Creator:
         return self.mode.get() == MODES['layers']
 
     def is_depth(self):
-        return self.mode.get() != MODES['classic']
+        return self.mode.get() in (MODES['depth'], MODES['layers'])
 
     def update_labels(self, *args):
         self.strength_label.set(f'Depth strength {self.strength.get()*100:.0f}%')
         self.bands_label.set(f'Lens texture {self.bands.get()*100:.0f}%')
         self.convergence_label.set(f'{"Background motion" if self.is_layers() else "Stationary depth"} {self.convergence.get()*100:.0f}%')
 
+    def is_gif(self):
+        return self.mode.get() == MODES["gif"]
+
+    def animate(self):
+        self.animation_job = None
+        if self.is_gif() and self.animation_clip:
+            self.render()
+            self.animation_job = self.root.after(40, self.animate)
+
     def update_mode(self):
+        self.fit_box.configure(state='disabled' if self.is_gif() else 'readonly')
+        self.angle_control.configure(state='disabled' if self.is_gif() else 'normal')
+        if self.animation_job is not None:
+            self.root.after_cancel(self.animation_job)
+            self.animation_job = None
+        if self.is_gif():
+            self.image_frames[1].pack_forget()
+            self.swap_button.pack_forget()
+            self.animation_job = self.root.after(40, self.animate)
+        else:
+            self.image_frames[1].pack(fill="x", pady=(0,10), after=self.image_frames[0])
+            self.swap_button.pack(fill="x", after=self.image_frames[1])
         self.swap_button.configure(text='Reverse depth' if self.is_depth() else 'Swap A / B')
         if self.is_depth():
             self.depth_controls.pack(fill='x', after=self.depth_anchor)
@@ -313,7 +340,7 @@ class Creator:
         else:
             self.background_fit_row.pack_forget()
         self.fit_title.configure(text='Foreground sizing' if self.is_layers() else 'Image sizing')
-        titles = ['Foreground', 'Background'] if self.is_layers() else ['Colour image', 'Depth map'] if self.is_depth() else ['Image A', 'Image B']
+        titles = ['Animation (GIF / APNG / WebP)', 'Unused'] if self.is_gif() else ['Foreground', 'Background'] if self.is_layers() else ['Colour image', 'Depth map'] if self.is_depth() else ['Image A', 'Image B']
         for panel, title in zip(self.image_frames, titles):
             panel.configure(text=title)
 
@@ -326,13 +353,19 @@ class Creator:
         self.refresh_images()
 
     def project_data(self):
-        data = dict(version=4, mode='layers' if self.is_layers() else 'depth' if self.is_depth() else 'classic', name=self.deck_name.get(), author=self.author.get(), images=list(self.paths), fit=self.fit.get(), background=self.background, thumbnail=self.thumbnail_path, depth=dict(strength=self.strength.get(), convergence=self.convergence.get(), invert=self.invert.get(), bands=self.bands.get()))
+        data = dict(version=4, mode='gif' if self.is_gif() else 'layers' if self.is_layers() else 'depth' if self.is_depth() else 'classic', name=self.deck_name.get(), author=self.author.get(), images=list(self.paths), fit=self.fit.get(), background=self.background, thumbnail=self.thumbnail_path, depth=dict(strength=self.strength.get(), convergence=self.convergence.get(), invert=self.invert.get(), bands=self.bands.get()))
         data['placement'] = copy.deepcopy(self.placements)
         data['background_fit'] = self.background_fit.get()
         data['wood_tint'] = self.wood_colour if self.wood_mode.get() != 'Original wood' else None
         return data
 
     def read_image(self, path, index):
+        if self.is_gif():
+            if self.animation_path != path:
+                self.animation_clip = animation.load(path)
+                self.animation_path = path
+                self.animation_start = time.monotonic()
+            return animation_texture.preview_frame(self.animation_clip,0,self.background,self.placements[0])
         fit = self.background_fit.get() if self.is_layers() and index==1 else self.fit.get()
         image = image_placement.frame(path, fit, self.background, self.placements[index],
                                       alpha=self.is_layers() and index == 0,
@@ -441,7 +474,7 @@ class Creator:
     def choose(self, index):
         if self.busy:
             return
-        path = filedialog.askopenfilename(title='Choose image', filetypes=[('Images', '*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff')])
+        path = filedialog.askopenfilename(title='Choose image', filetypes=[('Images', '*.gif *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff')])
         if path:
             self.paths[index] = path
             self.refresh_images()
@@ -451,6 +484,9 @@ class Creator:
             return
         self.preview_job = None
         for index, path in enumerate(self.paths):
+            if self.is_gif() and index == 1:
+                self.images[index] = None
+                continue
             if path:
                 try:
                     image = self.read_image(path, index)
@@ -463,6 +499,8 @@ class Creator:
         self.rebuild_depth()
         self.render()
         self.render_thumbnail()
+        if self.is_gif() and self.animation_clip and self.animation_job is None:
+            self.animation_job = self.root.after(40, self.animate)
 
     def swap(self):
         if self.busy:
@@ -484,7 +522,11 @@ class Creator:
         if all(image is None for image in self.images):
             self.preview.delete('all')
             return
-        if any(image is None for image in self.images):
+        if self.is_gif() and self.animation_clip and self.images[0] is not None:
+            elapsed=(time.monotonic()-self.animation_start)*1000
+            index=self.animation_clip.frame_index(elapsed % self.animation_clip.duration_ms)
+            out=animation_texture.preview_frame(self.animation_clip,index,self.background,self.placements[0])
+        elif any(image is None for image in self.images):
             out = next(image for image in self.images if image is not None)
         elif self.is_depth():
             if self.is_layers():
@@ -520,11 +562,13 @@ class Creator:
         self.preview.create_image(x, y, anchor='nw', image=photo)
 
     def render_thumbnail(self):
-        self.thumb_label.configure(text=Path(self.thumbnail_path).name if self.thumbnail_path else 'Automatic: both images + LENTICULAR')
+        self.thumb_label.configure(text=Path(self.thumbnail_path).name if self.thumbnail_path else 'Automatic: animation + ANIMATED' if self.is_gif() else 'Automatic: both images + LENTICULAR')
         try:
-            if self.thumbnail_path or all(image is not None for image in self.images):
+            if self.thumbnail_path or (self.is_gif() and self.images[0] is not None) or all(image is not None for image in self.images):
                 sources = [self.depth_preview[0], self.depth_preview[-1]] if self.is_depth() and self.depth_preview else self.images
-                thumbnail = engine.thumbnail(*sources, self.thumbnail_path, size=64)
+                if self.is_gif():
+                    sources = [self.images[0], self.images[0]]
+                thumbnail = engine.thumbnail(*sources, self.thumbnail_path, size=64, label="ANIMATED" if self.is_gif() else "LENTICULAR")
                 self.paint(self.thumb_preview, thumbnail, (64,64))
         except Exception as exc:
             self.status.set('Thumbnail: '+str(exc))
@@ -636,7 +680,7 @@ class Creator:
         try:
             for project in projects:
                 engine.validate_name(project['name'])
-                if not all(project['images']):
+                if not (project['images'][0] if project.get('mode') == 'gif' else all(project['images'])):
                     raise ValueError('Choose both images for '+project['name']+'.')
                 if project.get('wood_tint'):
                     raise ValueError('Custom wood tint is preview-only for now. Choose Original wood before exporting. The tint is saved in your workspace.')
@@ -699,7 +743,7 @@ class Creator:
     def choose_thumbnail(self):
         if self.busy:
             return
-        path = filedialog.askopenfilename(title='Choose custom thumbnail', filetypes=[('Images', '*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff'), ('All files', '*.*')])
+        path = filedialog.askopenfilename(title='Choose custom thumbnail', filetypes=[('Images', '*.gif *.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff'), ('All files', '*.*')])
         if not path:
             return
         try:

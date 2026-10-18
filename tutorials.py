@@ -3,6 +3,26 @@ from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 
 GUIDES = {
+    'Animated GIF': '''ANIMATED GRAPHICS
+
+Select Animated GIF from Effect, then choose a GIF, animated PNG or animated WebP.
+The clip loops on the underside without a lenticular effect. It starts centred,
+preserves its proportions, and does not upscale small sources. Adjust placement
+changes its size and position with a playing preview. Background colour fills
+transparent areas and the rest of the deck.
+
+This beta supports 1–128 frames and loops up to 40.95 seconds. Frame timings are
+rounded to 10 milliseconds. Storage resolution is reduced when needed to fit
+the game texture, so shorter clips can retain more detail. The preview cannot
+reproduce texture compression or game lighting exactly.
+
+Name the deck and export it alone or together with other effects using Export
+all. Custom thumbnails work; automatic thumbnails use the first frame.
+
+All new exports share the animation-compatible renderer. Older lenticular mods
+need a compatibility update or a fresh export before combining them with these
+mods. Do not enable both an original mod and its updated copy together.
+''',
     'Classic lenticular': '''CLASSIC LENTICULAR
 
 Choose Classic flip when you want two different pictures to change with the viewing angle.

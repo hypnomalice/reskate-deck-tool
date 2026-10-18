@@ -3,6 +3,17 @@
 Make custom lenticular skateboard graphics for ReSkate. Export one deck or a workspace
 of decks as an `.fbmod`, with custom names and thumbnails.
 
+Animated GIF mode also accepts animated PNG and WebP. It loops the clip on the
+underside, centred without stretching. Placement controls adjust its position and
+scale; the preview plays while you edit. Export animated and lenticular decks in
+one pack or as separate compatible mods.
+
+This beta supports up to 128 frames and 40.95 seconds, with timings rounded to
+10 milliseconds. Frames share one game texture and may be reduced in resolution.
+Long or full-board clips can look soft. Older lenticular exports must be re-exported
+with this version, or have their shared renderer upgraded, before combining them
+with animated mods. Do not enable an old pack and its replacement together.
+
 ## Download and run
 
 Download the Windows ZIP from [Releases](https://github.com/hypnomalice/reskate-deck-tool/releases),
