@@ -1,0 +1,752 @@
+import copy
+import json
+import queue
+import threading
+import traceback
+import random
+from pathlib import Path
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, colorchooser
+from PIL import Image, ImageTk, ImageDraw, ImageOps, ImageChops
+import creator_engine as engine
+import image_placement
+from tutorials import open_guide
+
+BG, FIELD, TEXT, MUTED = '#242629', '#33373d', '#e3e5e8', '#aeb4be'
+MODES = {'classic': 'Lenticular', 'depth': '3D (depth map)', 'layers': '3D (foreground/background)'}
+APP_NAME = 'ReSkate Deck Tool - Beta'
+QUOTES = [
+    'PM died for this.',
+    "You don't even skate bro",
+    'Sofi was here <3',
+    'Definitely not a virus',
+    'GLITCH FIX STUDIO PLEASE',
+    'ReSkate 2.07 is our endgame',
+    'Blows up pancakes with mind',
+    'This tool is so fucking ugly',
+    'Shoutouts azzie',
+    'Shoutouts strumzino',
+    'Shoutouts kori',
+    'Shoutouts Michael Fourth',
+    'You should try mesh recompiler!',
+]
+
+
+class Tooltip:
+    def __init__(self, widget, text):
+        self.widget, self.text, self.popup, self.timer = widget, text, None, None
+        widget.bind('<Enter>', self.show, add='+')
+        widget.bind('<FocusIn>', self.show, add='+')
+        for event in ('<Leave>', '<FocusOut>', '<Escape>', '<Destroy>'):
+            widget.bind(event, self.hide, add='+')
+
+    def show(self, event=None):
+        if self.popup:
+            return
+        popup = self.popup = tk.Toplevel(self.widget)
+        popup.withdraw()
+        popup.overrideredirect(True)
+        popup.attributes('-topmost', True)
+        popup.attributes('-alpha', 0)
+        text = self.text() if callable(self.text) else self.text
+        tk.Label(popup, text=text, bg=FIELD, fg=TEXT, padx=14, pady=12,
+                 justify='left', wraplength=310, font=('Segoe UI', 10)).pack()
+        popup.update_idletasks()
+        x = min(self.widget.winfo_rootx(), popup.winfo_screenwidth()-popup.winfo_reqwidth()-12)
+        y = self.widget.winfo_rooty()+self.widget.winfo_height()+8
+        if y+popup.winfo_reqheight() > popup.winfo_screenheight()-45:
+            y = self.widget.winfo_rooty()-popup.winfo_reqheight()-8
+        popup.geometry(f'+{max(0,x)}+{max(0,y)}')
+        popup.deiconify()
+        self.fade(0)
+
+    def fade(self, step):
+        if self.popup:
+            self.popup.attributes('-alpha', min(1, step/6))
+            if step < 6:
+                self.timer = self.widget.after(25, lambda: self.fade(step+1))
+
+    def hide(self, event=None):
+        if self.timer:
+            self.widget.after_cancel(self.timer)
+            self.timer = None
+        if self.popup:
+            self.popup.destroy()
+            self.popup = None
+
+
+class Creator:
+    def __init__(self, root):
+        self.root, self.paths, self.images = root, [None, None], [None, None]
+        self.events, self.busy = queue.Queue(), False
+        self.thumbnail_path, self.depth_preview, self.preview_job = None, None, None
+        self.background, self.wood_colour = '#ffffff', '#b98a56'
+        self.deck_name, self.author = tk.StringVar(value='My Lenticular Deck'), tk.StringVar()
+        self.mode, self.fit = tk.StringVar(value=MODES['classic']), tk.StringVar(value='Stretch')
+        self.background_fit = tk.StringVar(value='Crop to fill')
+        self.strength, self.convergence, self.bands = tk.DoubleVar(value=.04), tk.DoubleVar(value=.5), tk.DoubleVar(value=1)
+        self.invert, self.angle = tk.BooleanVar(value=False), tk.DoubleVar(value=0)
+        self.wood_mode = tk.StringVar(value='Original wood')
+        self.status = tk.StringVar(value='Choose two graphics to begin.')
+        self.selected, self.decks, self.loading = 0, [], False
+        self.placements = [dict(zoom=1, x=0, y=0), dict(zoom=1, x=0, y=0)]
+        self.quote = None
+        self.rotate_quote()
+        icon = Path(__file__).resolve().parent/'assets'/'sofi-deck-tool.ico'
+        if icon.is_file():
+            root.iconbitmap(default=str(icon))
+            self.app_icons = [ImageTk.PhotoImage(Image.open(icon).convert('RGBA').resize((size,size),Image.Resampling.LANCZOS)) for size in [16,32,64,128]]
+            root.iconphoto(True,*self.app_icons)
+        root.geometry('1180x870')
+        root.minsize(1080, 850)
+        root.configure(bg=BG)
+        self.style()
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(1, weight=1)
+        header = ttk.Frame(root, padding=(18, 12))
+        header.grid(row=0, column=0, sticky='ew')
+        ttk.Label(header, text=APP_NAME, font=('Segoe UI', 12, 'bold')).pack(side='left')
+        for text, action in [('Guide', lambda: open_guide(root)), ('Save', self.save_project), ('Open', self.load_project)]:
+            ttk.Button(header, text=text, command=action).pack(side='right', padx=4)
+        body = ttk.Frame(root, padding=(18, 0))
+        body.grid(row=1, column=0, sticky='nsew')
+        body.columnconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
+        left = ttk.Frame(body, width=245, padding=(0, 8, 14, 0))
+        left.grid(row=0, column=0, sticky='ns')
+        ttk.Label(left, text='Decks').pack(anchor='w')
+        self.deck_list = tk.Listbox(left, width=25, height=5, bg=FIELD, fg=TEXT, borderwidth=0,
+                                   selectbackground='#536479', selectforeground=TEXT, exportselection=False,
+                                   activestyle='none', font=('Segoe UI', 10))
+        self.deck_list.pack(fill='x', pady=8)
+        self.deck_list.bind('<<ListboxSelect>>', self.select_deck)
+        buttons = ttk.Frame(left)
+        buttons.pack(fill='x', pady=(0, 12))
+        ttk.Button(buttons, text='Add deck', command=self.add_deck).pack(side='left')
+        ttk.Button(buttons, text='Remove', command=self.remove_deck).pack(side='right')
+        self.labels, self.canvases, self.image_frames, self.image_contents = [], [], [], []
+        for index in range(2):
+            panel = ttk.LabelFrame(left, text=['Image A', 'Image B'][index], padding=8)
+            panel.pack(fill='x', pady=(0, 10))
+            self.image_frames.append(panel)
+            canvas = tk.Canvas(panel, width=34, height=136, bg=BG, highlightthickness=0)
+            canvas.pack(side='right', padx=(8, 0))
+            self.canvases.append(canvas)
+            content = ttk.Frame(panel)
+            self.image_contents.append(content)
+            content.pack(side='left', fill='x', expand=True)
+            label = ttk.Label(content, text='No image selected', wraplength=135)
+            label.pack(anchor='w', pady=(0, 8))
+            self.labels.append(label)
+            ttk.Button(content, text='Choose image…', command=lambda i=index: self.choose(i)).pack(fill='x')
+            ttk.Button(content, text='Adjust placement…', command=lambda i=index: self.adjust_placement(i)).pack(fill='x', pady=5)
+        self.auto_row = ttk.Frame(left)
+        ttk.Button(self.auto_row, text='Generate auto depthmap', command=self.generate_depth).pack(side='left')
+        self.help(self.auto_row, 'Uses an AI model to estimate depth. Results may be inaccurate around lettering, transparency, fine details and unusual poses. A carefully made depth map can give more accurate results.')
+        self.swap_button = ttk.Button(left, text='Swap A / B', command=self.swap)
+        self.swap_button.pack(fill='x', pady=5)
+        ttk.Button(left, text='Load depth test scene', command=self.load_study).pack(fill='x', pady=5)
+        centre = ttk.Frame(body, padding=(16, 8))
+        self.centre = centre
+        centre.grid(row=0, column=1, sticky='nsew')
+        ttk.Label(centre, text='Deck preview').pack(anchor='w')
+        self.preview = tk.Canvas(centre, width=270, height=480, bg='#1d1f22', highlightthickness=0)
+        self.preview.pack(fill='both', expand=True, pady=12)
+        self.preview.bind('<Configure>', lambda event: self.render())
+        self.angle_control = ttk.Scale(centre, from_=-1, to=1, variable=self.angle, command=self.render)
+        self.angle_control.pack(fill='x', pady=8)
+        self.placement_controls = ttk.Frame(centre)
+        self.placement_title = tk.StringVar()
+        ttk.Label(self.placement_controls,textvariable=self.placement_title).pack(anchor='w')
+        self.placement_vars = {key:tk.DoubleVar(value=value) for key,value in dict(zoom=1,x=0,y=0).items()}
+        self.placement_outputs = {}
+        self.placement_index = None
+        for key,title,low,high in [('zoom','Zoom',.1,5),('x','Horizontal',-1,1),('y','Vertical',-1,1)]:
+            row = ttk.Frame(self.placement_controls)
+            row.pack(fill='x',pady=2)
+            output = tk.StringVar()
+            self.placement_outputs[key] = (title,output)
+            ttk.Label(row,textvariable=output,width=18).pack(side='left')
+            ttk.Scale(row,from_=low,to=high,variable=self.placement_vars[key],command=self.move_image).pack(side='left',fill='x',expand=True)
+        row = ttk.Frame(self.placement_controls)
+        row.pack(fill='x',pady=5)
+        ttk.Button(row,text='Reset placement',command=self.reset_placement).pack(side='left')
+        ttk.Button(row,text='Done',command=self.placement_controls.pack_forget).pack(side='right')
+        ttk.Label(centre, text='Left                  Viewing angle                  Right', anchor='center').pack(fill='x')
+        ttk.Label(centre, text='Note: may not reflect 1:1 in game', anchor='center').pack(fill='x', pady=(8, 10))
+        right = ttk.Frame(body, padding=(14, 8, 0, 0))
+        right.grid(row=0, column=2, sticky='ns')
+        ttk.Label(right, text='Deck name').pack(anchor='w', pady=(8, 5))
+        ttk.Entry(right, textvariable=self.deck_name).pack(fill='x')
+        ttk.Label(right, text='Author (optional)').pack(anchor='w', pady=(8, 5))
+        ttk.Entry(right, textvariable=self.author).pack(fill='x')
+        row = ttk.Frame(right)
+        row.pack(fill='x', pady=(12, 5))
+        ttk.Label(row, text='Effect').pack(side='left')
+        self.help(row, 'Lenticular: two images flip with viewing angle.\n\n3D (depth map): a colour image and matching grayscale depth map create depth. White is near; black is far.\n\n3D (foreground/background): a transparent foreground moves over a complete background.')
+        modes = ttk.Combobox(right, textvariable=self.mode, values=list(MODES.values()), state='readonly', width=29)
+        modes.pack(fill='x')
+        modes.bind('<<ComboboxSelected>>', self.change_mode)
+        self.depth_anchor = modes
+        self.depth_controls = ttk.Frame(right)
+        self.strength_label, self.convergence_label, self.bands_label = [tk.StringVar() for _ in range(3)]
+        self.slider(self.depth_controls, self.strength_label, self.strength, self.schedule_depth,
+                    'How far parts move. 0% removes depth. High values may stretch edges or expose missing background.')
+        self.slider(self.depth_controls, self.bands_label, self.bands, self.render,
+                    'Strength of the fine lens-band texture. This does not increase 3D depth.')
+        self.slider(self.depth_controls, self.convergence_label, self.convergence, self.schedule_depth,
+                    lambda: '0% moves the foreground; 50% shares motion; 100% moves the background.' if self.is_layers() else 'The depth-map shade that stays still. Nearer and farther parts move in opposite directions.')
+        ttk.Checkbutton(self.depth_controls, text='Reverse depth', variable=self.invert, command=self.refresh_images).pack(anchor='w', pady=6)
+        for variable in (self.strength, self.convergence, self.bands, self.mode):
+            variable.trace_add('write', self.update_labels)
+        self.fit_title = ttk.Label(right, text='Image sizing')
+        self.fit_title.pack(anchor='w', pady=(12, 5))
+        fit = ttk.Combobox(right, textvariable=self.fit, values=['Stretch', 'Crop to fill', 'Fit entire image'], state='readonly')
+        fit.pack(fill='x')
+        fit.bind('<<ComboboxSelected>>', self.refresh_images)
+        self.background_fit_row = ttk.Frame(self.image_contents[1])
+        background_box = ttk.Combobox(self.background_fit_row,textvariable=self.background_fit,values=['Crop to fill','Fit entire image'],state='readonly',width=16)
+        background_box.pack(fill='x')
+        background_box.bind('<<ComboboxSelected>>',self.refresh_images)
+        Tooltip(background_box,'Background framing preserves the source aspect ratio. Adjust placement pans and zooms the original image before cropping it to the board.')
+        ttk.Button(right, text='Padding colour…', command=self.choose_background).pack(fill='x', pady=6)
+        row = ttk.Frame(right)
+        row.pack(fill='x', pady=(10, 5))
+        ttk.Label(row, text='Base colour (wood)').pack(side='left')
+        self.help(row, 'Exposed wood is separate from the graphic. Custom tint is preview-only in this test build; Original wood exports normally.')
+        row = ttk.Frame(right)
+        row.pack(fill='x')
+        wood = ttk.Combobox(row, textvariable=self.wood_mode, values=['Original wood', 'Custom tint (preview)'], state='readonly', width=20)
+        wood.pack(side='left', fill='x', expand=True)
+        wood.bind('<<ComboboxSelected>>', self.render)
+        ttk.Button(row, text='Colour…', command=self.choose_wood).pack(side='left', padx=(5, 0))
+        ttk.Label(right, text='In-game thumbnail').pack(anchor='w', pady=(10, 5))
+        row = ttk.Frame(right)
+        row.pack(fill='x')
+        self.thumb_preview = tk.Canvas(row, width=64, height=64, bg=FIELD, highlightthickness=0)
+        self.thumb_preview.pack(side='left', padx=(0, 8))
+        buttons = ttk.Frame(row)
+        buttons.pack(side='left', fill='x', expand=True)
+        ttk.Button(buttons, text='Custom image…', command=self.choose_thumbnail).pack(fill='x')
+        ttk.Button(buttons, text='Use automatic', command=self.reset_thumbnail).pack(fill='x', pady=5)
+        self.thumb_label = ttk.Label(right, text='Automatic: both images + LENTICULAR', wraplength=290)
+        self.thumb_label.pack(anchor='w', pady=5)
+        footer = ttk.Frame(root, padding=(18, 12))
+        footer.grid(row=2, column=0, sticky='ew')
+        footer.columnconfigure(0, weight=1, uniform='ends')
+        footer.columnconfigure(1, weight=1)
+        footer.columnconfigure(2, weight=1, uniform='ends')
+        disclaimer = tk.Label(footer, text='DISCLAIMER', bg=BG, fg=MUTED, font=('Segoe UI', 9, 'underline'))
+        disclaimer.grid(row=0, column=0, sticky='w')
+        Tooltip(disclaimer, "This tool is in beta, like genuinely.\nIf something breaks, we're sorry, make\na note of it and report it")
+        ttk.Label(footer, textvariable=self.deck_name, anchor='center').grid(row=0, column=1, sticky='ew')
+        buttons = ttk.Frame(footer)
+        buttons.grid(row=0, column=2, sticky='e')
+        self.help(buttons, 'Export .fbmod saves the selected deck. Export all puts every deck in this workspace into one .fbmod. Neither button installs anything.')
+        self.pack_button = ttk.Button(buttons, text='Export all (1)', command=self.export_pack)
+        self.pack_button.pack(side='left', padx=5)
+        self.export_button = ttk.Button(buttons, text='Export .fbmod', command=self.export)
+        self.export_button.pack(side='left')
+        ttk.Label(footer, textvariable=self.status, wraplength=1080).grid(row=1, column=0, columnspan=3, sticky='w', pady=(8, 0))
+        self.deck_name.trace_add('write', self.rename_deck)
+        self.decks = [self.project_data()]
+        self.draw_list()
+        self.update_mode()
+        self.update_labels()
+        root.protocol('WM_DELETE_WINDOW', self.close)
+        self.dirty = False
+        self.baseline = self.workspace_data()
+        root.after(150, self.poll)
+
+    def rotate_quote(self):
+        self.quote = random.choice([quote for quote in QUOTES if quote!=self.quote])
+        self.root.title(APP_NAME+' — '+self.quote)
+
+    def style(self):
+        style = ttk.Style(self.root)
+        style.theme_use('clam')
+        style.configure('.', background=BG, foreground=TEXT, font=('Segoe UI', 10))
+        style.configure('TButton', background=FIELD, padding=(8, 5), borderwidth=0)
+        style.map('TButton', background=[('active', '#49515c'), ('disabled', BG)])
+        style.configure('TEntry', fieldbackground=FIELD, foreground=TEXT, insertcolor=TEXT, padding=5)
+        style.configure('TCombobox', fieldbackground=FIELD, background=FIELD, padding=4)
+        style.map('TCombobox', fieldbackground=[('readonly', FIELD)], foreground=[('readonly', TEXT)])
+        style.configure('TScale', troughcolor=FIELD, background='#8090a5')
+        self.root.option_add('*TCombobox*Listbox.background', FIELD)
+        self.root.option_add('*TCombobox*Listbox.foreground', TEXT)
+
+    def help(self, parent, text):
+        button = ttk.Button(parent, text='?', width=2)
+        button.pack(side='left', padx=6)
+        Tooltip(button, text)
+
+    def slider(self, parent, title, variable, action, explanation):
+        row = ttk.Frame(parent)
+        row.pack(fill='x', pady=(8, 3))
+        ttk.Label(row, textvariable=title).pack(side='left')
+        self.help(row, explanation)
+        ttk.Scale(parent, from_=0, to=1, variable=variable, command=action).pack(fill='x')
+
+    def is_layers(self):
+        return self.mode.get() == MODES['layers']
+
+    def is_depth(self):
+        return self.mode.get() != MODES['classic']
+
+    def update_labels(self, *args):
+        self.strength_label.set(f'Depth strength {self.strength.get()*100:.0f}%')
+        self.bands_label.set(f'Lens texture {self.bands.get()*100:.0f}%')
+        self.convergence_label.set(f'{"Background motion" if self.is_layers() else "Stationary depth"} {self.convergence.get()*100:.0f}%')
+
+    def update_mode(self):
+        self.swap_button.configure(text='Reverse depth' if self.is_depth() else 'Swap A / B')
+        if self.is_depth():
+            self.depth_controls.pack(fill='x', after=self.depth_anchor)
+        else:
+            self.depth_controls.pack_forget()
+        if self.mode.get() == MODES['depth']:
+            self.auto_row.pack(fill='x', before=self.swap_button, pady=6)
+        else:
+            self.auto_row.pack_forget()
+        if self.is_layers():
+            self.background_fit_row.pack(fill='x',pady=4)
+        else:
+            self.background_fit_row.pack_forget()
+        self.fit_title.configure(text='Foreground sizing' if self.is_layers() else 'Image sizing')
+        titles = ['Foreground', 'Background'] if self.is_layers() else ['Colour image', 'Depth map'] if self.is_depth() else ['Image A', 'Image B']
+        for panel, title in zip(self.image_frames, titles):
+            panel.configure(text=title)
+
+    def change_mode(self, *args):
+        if self.busy:
+            return
+        self.update_mode()
+        self.bands.set(.25 if self.is_layers() else 1)
+        self.images = [None, None]
+        self.refresh_images()
+
+    def project_data(self):
+        data = dict(version=4, mode='layers' if self.is_layers() else 'depth' if self.is_depth() else 'classic', name=self.deck_name.get(), author=self.author.get(), images=list(self.paths), fit=self.fit.get(), background=self.background, thumbnail=self.thumbnail_path, depth=dict(strength=self.strength.get(), convergence=self.convergence.get(), invert=self.invert.get(), bands=self.bands.get()))
+        data['placement'] = copy.deepcopy(self.placements)
+        data['background_fit'] = self.background_fit.get()
+        data['wood_tint'] = self.wood_colour if self.wood_mode.get() != 'Original wood' else None
+        return data
+
+    def read_image(self, path, index):
+        fit = self.background_fit.get() if self.is_layers() and index==1 else self.fit.get()
+        image = image_placement.frame(path, fit, self.background, self.placements[index],
+                                      alpha=self.is_layers() and index == 0,
+                                      depth=self.is_depth() and not self.is_layers() and index == 1)
+        if self.is_depth() and not self.is_layers() and index == 1:
+            return (ImageOps.invert(image) if self.invert.get() else image).convert('RGB')
+        return image
+
+    def remember(self):
+        self.decks[self.selected] = self.project_data()
+
+    def workspace_data(self):
+        self.remember()
+        return copy.deepcopy(dict(version=5, selected=self.selected, decks=self.decks))
+
+    def draw_list(self):
+        self.deck_list.delete(0, 'end')
+        for deck in self.decks:
+            self.deck_list.insert('end', deck['name'] or 'Untitled deck')
+        self.deck_list.selection_set(self.selected)
+        self.pack_button.configure(text=f'Export all ({len(self.decks)})')
+
+    def rename_deck(self, *args):
+        if self.decks and not self.loading:
+            self.decks[self.selected]['name'] = self.deck_name.get()
+            self.draw_list()
+
+    def select_deck(self, event=None):
+        choice = self.deck_list.curselection()
+        if not choice or self.busy or choice[0] == self.selected:
+            return
+        self.remember()
+        self.selected = choice[0]
+        self.apply_project(self.decks[self.selected])
+
+    def add_deck(self):
+        if self.busy:
+            return
+        self.remember()
+        data = copy.deepcopy(self.decks[self.selected])
+        used = {deck['name'] for deck in self.decks}
+        number = len(self.decks)+1
+        while f'My deck {number}' in used:
+            number += 1
+        data.update(name=f'My deck {number}', images=[None, None], thumbnail=None,
+                    placement=[dict(zoom=1, x=0, y=0), dict(zoom=1, x=0, y=0)])
+        self.decks.append(data)
+        self.selected = len(self.decks)-1
+        self.apply_project(data)
+
+    def remove_deck(self):
+        if self.busy or len(self.decks) == 1:
+            return
+        if messagebox.askyesno('Remove deck', 'Remove this deck from the workspace? Source images will be kept.'):
+            del self.decks[self.selected]
+            self.selected = min(self.selected, len(self.decks)-1)
+            self.apply_project(self.decks[self.selected])
+
+    def apply_project(self, data):
+        self.loading = True
+        if self.preview_job:
+            self.root.after_cancel(self.preview_job)
+            self.preview_job = None
+        try:
+            self.mode.set(MODES[data['mode']])
+            self.deck_name.set(data['name'])
+            self.author.set(data.get('author', ''))
+            self.fit.set(data.get('fit', 'Stretch'))
+            self.background_fit.set(data.get('background_fit','Crop to fill'))
+            self.placement_index = None
+            self.placement_controls.pack_forget()
+            self.background = data.get('background', '#ffffff')
+            settings = data.get('depth', {})
+            for key, default in [('strength', .04), ('convergence', .5), ('bands', 1), ('invert', False)]:
+                getattr(self, key).set(settings.get(key, default))
+            self.paths = list(data['images'])
+            self.images, self.depth_preview = [None, None], None
+            self.thumbnail_path = data.get('thumbnail')
+            self.placements = copy.deepcopy(data.get('placement', [dict(zoom=1, x=0, y=0)]*2))
+            self.wood_colour = data.get('wood_tint') or '#b98a56'
+            self.wood_mode.set('Custom tint (preview)' if data.get('wood_tint') else 'Original wood')
+            for label, canvas in zip(self.labels, self.canvases):
+                label.configure(text='No image selected')
+                canvas.delete('all')
+            self.preview.delete('all')
+            self.thumb_preview.delete('all')
+            self.update_mode()
+            self.refresh_images()
+            self.draw_list()
+        finally:
+            self.loading = False
+
+    def load_study(self):
+        if self.busy:
+            return
+        self.mode.set(MODES['depth'])
+        self.update_mode()
+        self.deck_name.set('3D Lens Study')
+        from auto_depth import DATA
+        self.paths = list(map(str, engine.depth_views.depth_study(DATA/'demo')))
+        self.strength.set(.16)
+        self.convergence.set(.5)
+        self.invert.set(False)
+        self.refresh_images()
+
+    def choose(self, index):
+        if self.busy:
+            return
+        path = filedialog.askopenfilename(title='Choose image', filetypes=[('Images', '*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff')])
+        if path:
+            self.paths[index] = path
+            self.refresh_images()
+
+    def refresh_images(self, *args):
+        if self.busy:
+            return
+        self.preview_job = None
+        for index, path in enumerate(self.paths):
+            if path:
+                try:
+                    image = self.read_image(path, index)
+                    self.images[index] = image
+                    self.labels[index].configure(text=Path(path).name)
+                    self.paint(self.canvases[index], image, (34, 136))
+                except Exception as exc:
+                    self.images[index] = None
+                    self.status.set(str(exc))
+        self.rebuild_depth()
+        self.render()
+        self.render_thumbnail()
+
+    def swap(self):
+        if self.busy:
+            return
+        if self.is_depth():
+            self.invert.set(not self.invert.get())
+        else:
+            self.paths.reverse()
+            self.placements.reverse()
+        self.refresh_images()
+
+    def paint(self, canvas, image, size):
+        photo = ImageTk.PhotoImage(image.resize(size, Image.Resampling.LANCZOS))
+        canvas.image = photo
+        canvas.delete('all')
+        canvas.create_image(0, 0, anchor='nw', image=photo)
+
+    def render(self, *args):
+        if all(image is None for image in self.images):
+            self.preview.delete('all')
+            return
+        if any(image is None for image in self.images):
+            out = next(image for image in self.images if image is not None)
+        elif self.is_depth():
+            if self.is_layers():
+                a = self.images[0].resize((180, 720), Image.Resampling.LANCZOS)
+                b = self.images[1].resize(a.size, Image.Resampling.LANCZOS)
+                out = engine.depth_views.layer_at_angle(a, b, self.angle.get(), self.strength.get(), self.convergence.get(), self.invert.get(),band_intensity=self.bands.get())
+            elif self.depth_preview:
+                out = engine.depth_views.preview(self.depth_preview, self.angle.get(), band_intensity=self.bands.get())
+            else:
+                return
+        else:
+            front, back = [image.resize((210, 840), Image.Resampling.LANCZOS) for image in self.images]
+            out = Image.new('RGB', front.size)
+            view_angle = self.angle.get() * .22
+            for x in range(front.width):
+                lens_phase = ((x + .5) / front.width * 112) % 1 - .5
+                crossover = max(0, min(1, (view_angle - lens_phase * .2) / .08 + .5))
+                blend = .02 + .96 * crossover * crossover * (3 - 2 * crossover)
+                strip = (x, 0, x + 1, front.height)
+                out.paste(Image.blend(front.crop(strip), back.crop(strip), blend), (x, 0))
+        height = min(560, max(200, self.preview.winfo_height()-28))
+        width = height//4
+        out = out.resize((width, height), Image.Resampling.LANCZOS).convert('RGBA')
+        mask = Image.new('L', out.size)
+        ImageDraw.Draw(mask).rounded_rectangle((0,0,width-1,height-1), radius=width//2, fill=255)
+        out.putalpha(ImageChops.multiply(out.getchannel('A'),mask))
+        photo = ImageTk.PhotoImage(out)
+        self.preview.image = photo
+        self.preview.delete('all')
+        x, y = (self.preview.winfo_width()-width)//2, (self.preview.winfo_height()-height)//2
+        colour = self.wood_colour if self.wood_mode.get() != 'Original wood' else '#8c704e'
+        self.preview.create_rectangle(x-2, y+width//2, x+width+2, y+height-width//2, fill=colour, outline=colour)
+        self.preview.create_image(x, y, anchor='nw', image=photo)
+
+    def render_thumbnail(self):
+        self.thumb_label.configure(text=Path(self.thumbnail_path).name if self.thumbnail_path else 'Automatic: both images + LENTICULAR')
+        try:
+            if self.thumbnail_path or all(image is not None for image in self.images):
+                sources = [self.depth_preview[0], self.depth_preview[-1]] if self.is_depth() and self.depth_preview else self.images
+                thumbnail = engine.thumbnail(*sources, self.thumbnail_path, size=64)
+                self.paint(self.thumb_preview, thumbnail, (64,64))
+        except Exception as exc:
+            self.status.set('Thumbnail: '+str(exc))
+
+    def choose_wood(self):
+        colour = colorchooser.askcolor(self.wood_colour, title='Base wood tint (preview only)')[1]
+        if colour:
+            self.wood_colour = colour
+            self.wood_mode.set('Custom tint (preview)')
+            self.render()
+
+    def adjust_placement(self, index):
+        if self.busy or not self.paths[index]:
+            return
+        self.placement_index = index
+        if not self.is_depth():
+            self.angle.set(-1 if index==0 else 1)
+        self.placement_title.set('Adjust '+self.image_frames[index].cget('text')+' — live preview')
+        for key,variable in self.placement_vars.items():
+            variable.set(self.placements[index].get(key,1 if key=='zoom' else 0))
+        self.update_placement_labels()
+        self.placement_controls.pack(fill='x',before=self.angle_control,pady=8)
+        self.render()
+
+    def update_placement_labels(self):
+        for key,(title,output) in self.placement_outputs.items():
+            output.set(f'{title}: {self.placement_vars[key].get()*100:.0f}%')
+
+    def move_image(self, *args):
+        if self.placement_index is None or self.busy:
+            return
+        index = self.placement_index
+        setting = {key:variable.get() for key,variable in self.placement_vars.items()}
+        self.placements[index] = setting
+        if self.is_depth() and not self.is_layers():
+            self.placements[1-index] = copy.deepcopy(setting)
+        self.update_placement_labels()
+        if self.preview_job is None:
+            self.preview_job = self.root.after(60,self.refresh_images)
+
+    def reset_placement(self):
+        for key,variable in self.placement_vars.items():
+            variable.set(1 if key=='zoom' else 0)
+        self.move_image()
+
+    def save_project(self):
+        if self.busy:
+            return False
+        path = filedialog.asksaveasfilename(title='Save workspace', defaultextension='.lenticular.json', initialfile='Deck workspace.lenticular.json', filetypes=[('Lenticular project','*.lenticular.json')])
+        if not path:
+            return False
+        try:
+            data = self.workspace_data()
+            Path(path).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf8')
+            self.baseline = copy.deepcopy(data)
+            self.status.set('Workspace saved. Source images remain in their original locations.')
+            return True
+        except Exception as exc:
+            messagebox.showerror('Cannot save workspace', str(exc))
+            return False
+
+    def load_project(self):
+        if self.busy or not self.confirm_discard():
+            return
+        path = filedialog.askopenfilename(title='Open project or workspace', filetypes=[('Lenticular project','*.lenticular.json'),('JSON','*.json')])
+        if not path:
+            return
+        try:
+            data = json.loads(Path(path).read_text(encoding='utf8'))
+            decks = data['decks'] if data.get('version') == 5 else [data]
+            if not decks:
+                raise ValueError('No decks found in this workspace.')
+            for deck in decks:
+                if deck['mode'] not in MODES or len(deck['images']) != 2:
+                    raise ValueError('Invalid deck settings.')
+                deck['images'] = [str((Path(path).parent/p).resolve()) if p else None for p in deck['images']]
+                if deck.get('thumbnail'):
+                    deck['thumbnail'] = str((Path(path).parent/deck['thumbnail']).resolve())
+            self.decks = decks
+            self.selected = max(0,min(data.get('selected',0),len(decks)-1))
+            self.apply_project(decks[self.selected])
+            self.baseline = self.workspace_data()
+        except Exception as exc:
+            messagebox.showerror('Cannot open project', str(exc))
+
+    def confirm_discard(self):
+        if self.workspace_data() == self.baseline:
+            return True
+        result = messagebox.askyesnocancel('Save changes?', 'Save this workspace before continuing?')
+        return self.save_project() if result else result is False
+
+    def close(self):
+        if self.busy:
+            messagebox.showinfo('Export in progress', 'Wait for the export to finish before closing.')
+        elif self.confirm_discard():
+            self.root.destroy()
+
+    def export(self):
+        self.start_export(False)
+
+    def export_pack(self):
+        self.start_export(True)
+
+    def start_export(self, all_decks):
+        if self.busy:
+            return
+        self.remember()
+        projects = copy.deepcopy(self.decks if all_decks else [self.decks[self.selected]])
+        try:
+            for project in projects:
+                engine.validate_name(project['name'])
+                if not all(project['images']):
+                    raise ValueError('Choose both images for '+project['name']+'.')
+                if project.get('wood_tint'):
+                    raise ValueError('Custom wood tint is preview-only for now. Choose Original wood before exporting. The tint is saved in your workspace.')
+            if len({engine.validate_name(p['name']).casefold() for p in projects}) != len(projects):
+                raise ValueError('Give each deck a different name.')
+        except ValueError as exc:
+            messagebox.showerror('Check the decks', str(exc))
+            return
+        title = 'Lenticular Deck Pack' if all_decks else projects[0]['name']
+        path = filedialog.asksaveasfilename(title='Export mod', defaultextension='.fbmod', initialfile=title+'.fbmod', filetypes=[('ReSkate mod','*.fbmod')])
+        if not path:
+            return
+        self.busy = True
+        self.export_button.configure(state='disabled')
+        self.pack_button.configure(state='disabled')
+        self.status.set('Preparing export…')
+        author = self.author.get()
+        def run():
+            try:
+                result = engine.export_pack(projects, path, lambda msg:self.events.put(('status',msg)), title=title, author=author)
+                self.events.put(('done',str(result)))
+            except Exception as exc:
+                from auto_depth import DATA
+                DATA.mkdir(parents=True,exist_ok=True)
+                (DATA/'last-error.txt').write_text(traceback.format_exc())
+                self.events.put(('error',str(exc)))
+        threading.Thread(target=run,daemon=True).start()
+
+    def poll(self):
+        while True:
+            try:
+                kind, value = self.events.get_nowait()
+            except queue.Empty:
+                break
+            if kind == 'status':
+                self.status.set(value)
+                continue
+            self.busy = False
+            self.export_button.configure(state='normal')
+            self.pack_button.configure(state='normal')
+            if kind == 'done':
+                self.status.set('Saved: ' + value)
+                messagebox.showinfo('Export complete',
+                    'Saved your .fbmod.\n\nImport it in Studio to install it. '
+                    'Find each deck by its chosen name in the board menu.\n\n'
+                    'The export has not installed or enabled anything.')
+            else:
+                self.status.set('Export failed.')
+                messagebox.showerror('Export failed', value)
+        self.root.after(150, self.poll)
+
+    def choose_background(self):
+        if self.busy:
+            return
+        color = colorchooser.askcolor(self.background, title='Transparency and padding colour')[1]
+        if color:
+            self.background = color
+            self.refresh_images()
+
+    def choose_thumbnail(self):
+        if self.busy:
+            return
+        path = filedialog.askopenfilename(title='Choose custom thumbnail', filetypes=[('Images', '*.png *.jpg *.jpeg *.webp *.bmp *.tif *.tiff'), ('All files', '*.*')])
+        if not path:
+            return
+        try:
+            with Image.open(path) as im:
+                im.verify()
+        except Exception as e:
+            messagebox.showerror('Cannot open thumbnail', str(e))
+            return
+        self.thumbnail_path = path
+        self.render_thumbnail()
+
+    def rebuild_depth(self):
+        self.depth_preview = None
+        if self.is_depth() and all((im is not None for im in self.images)):
+            image = self.images[0].resize((128, 512), Image.Resampling.LANCZOS)
+            depth = self.images[1].resize(image.size, Image.Resampling.BILINEAR)
+            if self.is_layers():
+                self.depth_preview = engine.depth_views.layer_views(image, depth, self.strength.get(), self.convergence.get(), self.invert.get())
+            else:
+                self.depth_preview = engine.depth_views.views(image, depth, self.strength.get(), self.convergence.get())
+
+    def reset_thumbnail(self):
+        if self.busy:
+            return
+        self.thumbnail_path = None
+        self.render_thumbnail()
+
+    def schedule_depth(self, *args):
+        if self.preview_job:
+            self.root.after_cancel(self.preview_job)
+        self.preview_job = self.root.after(200, self.refresh_images)
+
+    def generate_depth(self):
+        from auto_depth import generate_dialog
+        generate_dialog(self)
+
+
+def main():
+    from first_run import show_shader_warning
+    import sys
+    if sys.platform=='win32':
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('ReSkate.DeckTool.Beta')
+    root = tk.Tk()
+    Creator(root)
+    root.update_idletasks()
+    if show_shader_warning(root):
+        root.mainloop()
+    else:
+        root.destroy()
