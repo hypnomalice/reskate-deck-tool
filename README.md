@@ -33,9 +33,16 @@ approximate: lighting, deck curvature and gameplay can change the result.
 - **3D (foreground/background):** a transparent foreground over a complete background.
   Background motion splits movement between the planes; lens texture controls banding.
 
-Auto depth generation is optional and uses an AI estimate. The first use offers a
-99.1 MB model download. Generation runs locally; artwork is not uploaded. A carefully
-made depth map can be more accurate. See [the model homepage](https://huggingface.co/depth-anything/Depth-Anything-V2-Small).
+Auto depth generation is optional and uses an AI estimate. Its dialog offers:
+
+- **Light (Small)** — the default, 99.1 MB, Apache 2.0.
+- **Full (Base)** — 388.9 MB, CC BY-NC 4.0, **non-commercial use only**.
+
+Each model downloads only when requested and is cached separately. Full uses more
+memory and can take longer; it is not guaranteed to improve every image. Generation
+runs locally; artwork is not uploaded. A carefully made depth map can be more accurate.
+Model homepages: [Small](https://huggingface.co/depth-anything/Depth-Anything-V2-Small),
+[Base](https://huggingface.co/depth-anything/Depth-Anything-V2-Base).
 
 ## Current limits
 

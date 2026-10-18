@@ -12,8 +12,9 @@ third-party dependencies, the supplied character icon, or game-derived template 
 - Python, Tcl/Tk, Pillow, NumPy, ONNX Runtime, FlatBuffers and Protobuf retain their own
   licences. The `licenses` folder carries licence texts collected from the build environment.
 - PyInstaller is a build dependency with its own bootloader exception.
-- Optional depth model: Depth Anything V2 Small, Apache 2.0. It is not included in the
-  executable. The pinned ONNX conversion and checksum are recorded in `auto_depth.py`.
+- Optional depth models: Depth Anything V2 Small (Light), Apache 2.0; Depth Anything
+  V2 Base (Full), CC BY-NC 4.0, non-commercial use only. Neither is included in the
+  executable. Pinned ONNX revisions and checksums are recorded in `auto_depth.py`.
 
 No example decks or personal artwork are included. Source projects and generated images
 belong to their respective authors.
