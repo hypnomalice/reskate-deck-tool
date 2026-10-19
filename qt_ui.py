@@ -333,6 +333,31 @@ class Creator(QMainWindow):
                 self.events.put(('error',0,str(exc)))
         threading.Thread(target=run,daemon=True).start()
 
+    def update_fbmods(self):
+        if self.busy:
+            return
+        paths,_ = QFileDialog.getOpenFileNames(self,'Update existing Deck Tool packs',filter='ReSkate mod (*.fbmod)')
+        if not paths:
+            return
+        folder = QFileDialog.getExistingDirectory(self,'Save compatible copies in…')
+        if not folder:
+            return
+        self.set_busy(True)
+        self.status.setText('Updating existing packs…')
+        def run():
+            from fbmod_compat import update_file
+            saved,failed = [],[]
+            for path in paths:
+                destination = Path(folder)/(Path(path).stem+' - Compatible.fbmod')
+                self.events.put(('status',0,'Updating '+Path(path).name+'…'))
+                try:
+                    decks = update_file(path,destination)
+                    saved.append(str(destination)+f' ({decks} decks)')
+                except Exception as exc:
+                    failed.append(Path(path).name+': '+str(exc))
+            self.events.put(('compatibility',0,(saved,failed)))
+        threading.Thread(target=run,daemon=True).start()
+
     def guide(self):
         from tutorials import GUIDES
         dialog = QDialog(self)
@@ -638,7 +663,7 @@ class Creator(QMainWindow):
         footer.addWidget(self.status,1)
         footer.addWidget(QLabel(self.quote))
         outer.addLayout(footer)
-        for name,items in [('File',[('Open project…',self.open_project),('Save',self.save_project)]),('Deck',[('Add deck',self.add_deck),('Remove selected',lambda:self.remove_deck(self.selected))]),('View',[('Enlarge preview',self.enlarge)]),('Help',[('Guide',self.guide)])]:
+        for name,items in [('File',[('Open project…',self.open_project),('Save',self.save_project),('Update existing FBMODs…',self.update_fbmods)]),('Deck',[('Add deck',self.add_deck),('Remove selected',lambda:self.remove_deck(self.selected))]),('View',[('Enlarge preview',self.enlarge)]),('Help',[('Guide',self.guide)])]:
             menu = self.menuBar().addMenu(name)
             for text,action in items:
                 menu.addAction(text,action)
@@ -899,6 +924,16 @@ class Creator(QMainWindow):
                     self.update_button.show()
             elif kind=='status':
                 self.status.setText(result)
+            elif kind=='compatibility':
+                self.set_busy(False)
+                saved,failed = result
+                self.status.setText(f'Updated {len(saved)} pack(s); {len(failed)} skipped.')
+                message = 'Original files were left unchanged.\n\n'
+                if saved:
+                    message += 'Saved:\n'+'\n'.join(saved)+'\n\nImport the compatible copies in ReSkate Studio and replace the older versions in your mod list. Update every older effect pack you use together.'
+                if failed:
+                    message += '\n\nSkipped:\n'+'\n'.join(failed)
+                QMessageBox.information(self,'Compatibility update',message)
             elif kind in ('export','error'):
                 self.set_busy(False)
                 if kind=='export':

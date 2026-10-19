@@ -42,7 +42,19 @@ def check(folder):
         output = engine.export_pack(projects,folder/'Studio Testing Pack.fbmod')
         engine.deck_archive.resource = original
         header,blobs = engine.split_mod(output.read_bytes())
-        assert len(blobs) == 60
+        assert len(blobs) == 61
+        from fbmod_compat import Archive, compatible, unpack
+        exported = output.read_bytes()
+        assert compatible(exported)[0] == exported
+        archive = Archive(exported)
+        assert archive.find(2,'characters/lua/luaskateboardcompositor') is not None
+        for i in range(len(archive.blobs)):
+            kind,name = archive.key(i)
+            if kind == 2 and name.endswith('_color'):
+                import struct
+                raw = unpack(archive.blobs[i])
+                assert raw[30:34] == bytes((1,0,0,1))
+                assert struct.unpack_from('<H',raw,20)[0] == 1
         assert b'items/cust_board_stickers/skateboardstickercompositetextureset\0' in header
         assert b'characters/customization/board/loaders/cas_skateboard_sticker_compositor_prefab\0' in header
         compositor=Ebx(next(raw for name,raw,rid in records if name=='items/cust_board_stickers/skateboardstickercompositetextureset'))

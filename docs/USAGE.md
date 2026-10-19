@@ -24,6 +24,18 @@ Older lenticular exports must be re-exported
 with this version, or have their shared renderer upgraded, before combining them
 with animated mods. Do not enable an old pack and its replacement together.
 
+## Update existing packs
+
+Choose **File > Update existing FBMODs...**, select one or more older Deck Tool
+packs, then choose a folder for the updated copies. No project or source images
+are needed. Originals remain unchanged; existing output files are never replaced.
+The updater recognises published Deck Tool renderers and skips unsupported files
+with an explanation.
+
+Import the new `- Compatible.fbmod` files in shader-capable ReSkate Studio and
+replace their older versions in the enabled mod list. Update every older effect
+pack you use together. New exports already include the sticker fix.
+
 ## Preview and updates
 
 The board stays full-height in the centre, with separately scrolling image settings
@@ -42,7 +54,7 @@ An **Update available** button appears only for a newer release. It opens that r
 on GitHub; it does not replace the executable or install anything automatically.
 Beta builds also check beta releases. Offline and rate-limited checks stay quiet.
 
-Dark artwork in gameplay and sticker corruption remain known issues in this beta.
+Stickers now composite separately from effect artwork. Dark artwork in gameplay remains a known issue.
 
 ## Download and run
 

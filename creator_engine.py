@@ -221,6 +221,9 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     result=deck_archive.build(decks,raw_cas,title,author.strip(),independent_shader=True)
     check_head,check_blobs=split_mod(result)
     assert len(check_blobs)==14*len(projects)+13+2*int(any(p.get('mode')=='gif' for p in projects))+3*sum(bool(p.get('wood_tint')) for p in projects)
+    from fbmod_compat import compatible
+    progress('Applying sticker compatibility…')
+    result, _ = compatible(result)
     dest.parent.mkdir(parents=True,exist_ok=True)
     temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
     progress('Export complete.');return dest

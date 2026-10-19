@@ -8,6 +8,9 @@ third-party dependencies, the supplied character icon, or game-derived template 
   to its original rights; no ownership or MIT licence to game assets is claimed.
 - `assets/sofi-deck-tool.*` is the user-supplied character icon, not MIT-licensed artwork.
 - `assets/app-icon.*` is the user-supplied butterfly logo, not MIT-licensed artwork.
+- `assets/sticker-compat` contains game-derived shader/compositor resources and
+  modified compiled effect programs, subject to the same original rights as the
+  engine templates.
 - `assets/board-compositor*.ebx` contains game-derived compositor templates and is
   subject to the same original rights as the engine templates.
 - `assets/board-wood.*` contains the game-derived wood texture and texture-asset
