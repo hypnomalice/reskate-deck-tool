@@ -47,6 +47,9 @@ def check(folder):
         exported = output.read_bytes()
         assert compatible(exported)[0] == exported
         archive = Archive(exported)
+        import struct
+        count_at = archive.prefix.index(b'\0\xff\xff\xff\xffIcon') - 4
+        assert struct.unpack_from('<I',archive.prefix,count_at)[0] == len(blobs)+5
         assert archive.find(2,'characters/lua/luaskateboardcompositor') is not None
         for i in range(len(archive.blobs)):
             kind,name = archive.key(i)

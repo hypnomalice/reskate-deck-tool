@@ -36,6 +36,14 @@ Import the new `- Compatible.fbmod` files in shader-capable ReSkate Studio and
 replace their older versions in the enabled mod list. Update every older effect
 pack you use together. New exports already include the sticker fix.
 
+### Files exported or updated with v0.1.5-beta.1
+
+That release omitted the five metadata entries from the FBMOD resource count.
+Studio could skip five resources even though their data was still in the file.
+Version v0.1.5-beta.2 repairs these affected files directly through the updater.
+After updating, re-import the repaired copies and replace the broken versions in
+ReSkate Studio. Your artwork and settings do not need recreating.
+
 ## Preview and updates
 
 The board stays full-height in the centre, with separately scrolling image settings

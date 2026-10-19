@@ -1,5 +1,6 @@
 from pathlib import Path
 import tempfile
+import struct
 import unittest
 from unittest.mock import patch
 
@@ -33,11 +34,24 @@ class CompatibilityTests(unittest.TestCase):
         self.assertEqual(compatible(updated)[0],updated)
         self.assertEqual(self.source.read_bytes(),self.original)
         archive = Archive(updated)
+        count_at = archive.prefix.index(b'\0\xff\xff\xff\xffIcon') - 4
+        self.assertEqual(struct.unpack_from('<I',archive.prefix,count_at)[0],len(archive.blobs)+5)
+        self.assertEqual(updated[:12],self.original[:12])
+        self.assertEqual(updated[24:count_at],self.original[24:count_at])
+        self.assertEqual(updated[count_at+4:len(archive.prefix)],self.original[count_at+4:len(archive.prefix)])
         self.assertIsNotNone(archive.find(2,'characters/lua/luaskateboardcompositor'))
         headers = [unpack(archive.blobs[i]) for i in range(len(archive.blobs))
                    if archive.key(i)[0]==2 and archive.key(i)[1].endswith('_color')]
         self.assertEqual(len(headers),1)
         self.assertEqual(headers[0][30:34],bytes((1,0,0,1)))
+
+    def test_repairs_the_incorrect_metadata_count_from_beta_1(self):
+        broken = bytearray(compatible(self.original)[0])
+        archive = Archive(broken)
+        at = archive.prefix.index(b'\0\xff\xff\xff\xffIcon') - 4
+        struct.pack_into('<I',broken,at,len(archive.blobs))
+        repaired, _ = compatible(broken)
+        self.assertEqual(repaired,compatible(self.original)[0])
 
     def test_saved_copies_do_not_overwrite_files(self):
         destination = self.root/'compatible.fbmod'

@@ -86,7 +86,11 @@ class Archive:
     def bytes(self):
         prefix = bytearray(self.prefix)
         at = prefix.index(b'\0\xff\xff\xff\xffIcon') - 4
-        struct.pack_into('<I', prefix, at, len(self.blobs))
+        # Metadata entries have no payload-table slot, but still count as resources.
+        metadata = prefix.count(b'\0\xff\xff\xff\xff')
+        if metadata != 5:
+            raise UnsupportedMod('The FBMOD metadata layout is not supported.')
+        struct.pack_into('<I', prefix, at, len(self.blobs) + metadata)
         head = prefix + b''.join(self.descriptors)
         struct.pack_into('<QI', head, 12, len(head), len(self.blobs))
         table = []
