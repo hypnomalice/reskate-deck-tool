@@ -72,3 +72,18 @@ Sticker Mask Probe is required.
 **Known issues:** shadows and banding in gameplay remain unresolved. Work on
 resolving both will continue in a future update. Preview lighting differs from
 in-game lighting. Clean-machine testing remains pending.
+
+
+### Version 1.0.1 performance update
+
+Smooth-depth and Ghost Rare CPU previews avoid processing unused colour channels
+while sampling depth. Development-PC benchmarks at the normal preview size
+improved from 132 to 56 ms per frame for smooth depth and 210 to 84 ms for Ghost
+Rare. Twelve before/after reference images were pixel-identical. These measure
+preview rendering, not export speed or game FPS.
+
+GIF placement edits reuse decoded frames when the source file is unchanged;
+replacing the source file refreshes the cache. No game shaders or exported deck
+formats changed, and existing FBMODs do not need updating for 1.0.1.
+Shadows and banding in gameplay remain known issues. Ghost Rare masks are not
+included in this update.

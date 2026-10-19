@@ -214,6 +214,7 @@ class Creator(QMainWindow):
         self.revision = 0
         self.display_revision = -1
         self.lens_source_key = self.clip_path = None
+        self.clip_source_key = None
         self.placement_sources = None
         self.placement_source_key = None
         self.live_placement = False
@@ -858,13 +859,22 @@ class Creator(QMainWindow):
         self.pending = None
         self.worker = True
         cached_sources = self.placement_sources if tuple(d['images'])==self.placement_source_key else None
+        clip_key = None
+        if d['mode']=='gif':
+            path = Path(d['images'][0])
+            try:
+                stamp = path.stat()
+                clip_key = (str(path.resolve()),stamp.st_mtime_ns,stamp.st_size)
+            except OSError:
+                pass
+        cached_clip = self.clip if clip_key is not None and clip_key==self.clip_source_key else None
         def run():
             try:
                 settings = d.get('depth',{})
                 if d['mode']=='gif':
-                    clip = animation.load(d['images'][0])
+                    clip = cached_clip if cached_clip is not None else animation.load(d['images'][0])
                     still = animation_texture.preview_frame(clip,0,d['background'],d['placement'][0])
-                    result = (None,None,clip,[still,still],None)
+                    result = (None,None,clip,[still,still],None,clip_key)
                 else:
                     sources = cached_sources
                     if sources is None:
@@ -901,7 +911,7 @@ class Creator(QMainWindow):
                     renderer = AtlasPreview(atlas,preview_mode)
                     detail = copy.copy(renderer)
                     detail.settings = detail.settings.copy()
-                    result = (renderer,detail,None,thumbs,sources)
+                    result = (renderer,detail,None,thumbs,sources,None)
                 self.events.put(('preview',revision,result))
             except InterruptedError:
                 self.events.put(('preview',revision,None))
@@ -919,7 +929,7 @@ class Creator(QMainWindow):
                         self.status.setText('Preview: '+result)
                     elif result:
                         keep_clock = self.clip is not None and result[2] is not None and self.clip_path==self.current()['images'][0]
-                        self.renderer,self.detail_renderer,self.clip,self.thumbnail_sources,self.placement_sources = result
+                        self.renderer,self.detail_renderer,self.clip,self.thumbnail_sources,self.placement_sources,self.clip_source_key = result
                         self.placement_source_key = tuple(self.current()['images'])
                         self.live_placement = False
                         self.display_revision = revision

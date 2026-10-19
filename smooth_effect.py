@@ -18,18 +18,19 @@ def pack(image, depth, strength=.075, convergence=.5, ghost=False):
 
 def render(renderer, angle, u, v):
     sample=renderer.sample
+    depth=renderer.sample_channel
     movement=-angle*renderer.motion[0]
     source=np.broadcast_to(u,np.broadcast_shapes(u.shape,v.shape)).copy()
     for _ in range(7):
-        height=sample(source,.5+v*.5)[...,1]
+        height=depth(source,.5+v*.5,1)
         target=u+(height-renderer.motion[1])*movement
         source=(source+target)*.5
     rgb=sample(source,64/4096+v*1984/4096)
     if renderer.mode!='ghost':return rgb
     luma=rgb@np.array([.2126,.7152,.0722],dtype=np.float32)
     silver=.48+.65*(luma-.5)
-    dx=sample(source+.004,.5+v*.5)[...,1]-sample(source-.004,.5+v*.5)[...,1]
-    dy=sample(source,.5+v*.5+.001)[...,1]-sample(source,.5+v*.5-.001)[...,1]
+    dx=depth(source+.004,.5+v*.5,1)-depth(source-.004,.5+v*.5,1)
+    dy=depth(source,.5+v*.5+.001,1)-depth(source,.5+v*.5-.001,1)
     orientation=12*dx+8*dy+angle*2.4
     coverage=np.clip(1-np.abs(orientation)*.65,0,1)**2
     phase=(orientation+height*3)*2.4
