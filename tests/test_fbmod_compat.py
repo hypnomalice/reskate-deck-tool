@@ -53,6 +53,17 @@ class CompatibilityTests(unittest.TestCase):
         repaired, _ = compatible(broken)
         self.assertEqual(repaired,compatible(self.original)[0])
 
+    def test_empty_texture_is_available_without_the_probe_mod(self):
+        archive = Archive(compatible(self.original)[0])
+        asset = archive.descriptors[archive.find(1,'characters/customization/reskate/board_bottomart/lenticular_black_rgb')]
+        lua = archive.descriptors[archive.find(2,'characters/lua/luaskateboardcompositor')]
+        def bundles(descriptor):
+            _, end, _ = creator_engine.deck_archive.descriptor_parts(descriptor)
+            count = struct.unpack_from('<I',descriptor,end+1)[0]
+            return struct.unpack_from('<'+str(count)+'I',descriptor,end+5)
+        self.assertEqual(len(bundles(asset)),6)
+        self.assertEqual(bundles(asset),bundles(lua))
+
     def test_saved_copies_do_not_overwrite_files(self):
         destination = self.root/'compatible.fbmod'
         self.assertEqual(update_file(self.source,destination),1)

@@ -51,6 +51,14 @@ def check(folder):
         count_at = archive.prefix.index(b'\0\xff\xff\xff\xffIcon') - 4
         assert struct.unpack_from('<I',archive.prefix,count_at)[0] == len(blobs)+5
         assert archive.find(2,'characters/lua/luaskateboardcompositor') is not None
+        empty = archive.descriptors[archive.find(1,'characters/customization/reskate/board_bottomart/lenticular_black_rgb')]
+        lua = archive.descriptors[archive.find(2,'characters/lua/luaskateboardcompositor')]
+        def global_bundles(descriptor):
+            _, end, _ = engine.deck_archive.descriptor_parts(descriptor)
+            count = struct.unpack_from('<I',descriptor,end+1)[0]
+            return struct.unpack_from('<'+str(count)+'I',descriptor,end+5)
+        assert len(global_bundles(empty)) == 6
+        assert global_bundles(empty) == global_bundles(lua)
         for i in range(len(archive.blobs)):
             kind,name = archive.key(i)
             if kind == 2 and name.endswith('_color'):

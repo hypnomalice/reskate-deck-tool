@@ -36,11 +36,18 @@ Import the new `- Compatible.fbmod` files in shader-capable ReSkate Studio and
 replace their older versions in the enabled mod list. Update every older effect
 pack you use together. New exports already include the sticker fix.
 
-### Files exported or updated with v0.1.5-beta.1
+### Files exported or updated with beta.1 or beta.2
+
+Use v0.1.5-beta.3 or newer to repair these packs. Beta.3 registers the compositor's
+empty texture globally, so packs work without the Sticker Mask Probe development
+mod. This has been checked in game with the probe disabled. Run affected FBMODs
+through the updater, then re-import the repaired copies in Studio.
+
+### Beta.1 resource-count issue
 
 That release omitted the five metadata entries from the FBMOD resource count.
 Studio could skip five resources even though their data was still in the file.
-Version v0.1.5-beta.2 repairs these affected files directly through the updater.
+The current updater repairs these affected files directly.
 After updating, re-import the repaired copies and replace the broken versions in
 ReSkate Studio. Your artwork and settings do not need recreating.
 

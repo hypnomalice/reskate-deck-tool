@@ -177,8 +177,6 @@ def compatible(data):
             archive.blobs.append(b'')
             archive.descriptors.append(bytearray())
         descriptor = bytearray.fromhex(record['descriptor'])
-        if record['kind'] == 1 and record['name'].endswith('/lenticular_black_rgb'):
-            descriptor = archive.descriptors[i]
         if record in resources[:6]:
             _, _, new_tail = deck_archive.descriptor_parts(descriptor)
             existing = archive.descriptors[i]
