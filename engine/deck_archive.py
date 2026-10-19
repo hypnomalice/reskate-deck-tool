@@ -163,6 +163,14 @@ def build(decks,cas,title,author,*,independent_shader=False):
             _,_,tail=descriptor_parts(bytearray.fromhex(ts[i]['descriptor']))
             old=u64(bytes.fromhex(ts[i]['descriptor']),tail+4)
             ridmap[old]=texture_rid(names_by_index[i])
+        if deck.get('wood_texture'):
+            wood_source=Ebx((ROOT.parent/'assets/board-wood.ebx').read_bytes())
+            wood_name=f'characters/customization/reskate/board_bottomart/lenticular_{token}_wood'
+            wood_file=guid(identity,'wood/file');wood_export=guid(identity,'wood/export')
+            wood_chunk=guid(identity,'wood/chunk');wood_rid=texture_rid(wood_name)
+            assert wood_source.f[:16]+wood_source.data[:16] in Ebx(base[0]).imports
+            gmap[wood_source.f[:16]]=wood_file
+            gmap[wood_source.data[:16]]=wood_export
         names[b'lenticular_input3_probe_ap']=names_by_index[0].rsplit('/',1)[-1].encode()
         item=Ebx(base[17]);at=72+struct.unpack_from('<q',item.data,72)[0];oldkey=item.data[at:item.data.index(0,at)]
         newkey=('Own_'+deck['name'].replace(' ','_')).encode();names[oldkey]=newkey
@@ -215,6 +223,33 @@ def build(decks,cas,title,author,*,independent_shader=False):
                 tag='reskate-cosmetic-dependency:v1'
             add(i,names_by_index[i],raw,tag=tag,rid=rid,chunk_sizes=sizes if i==14 else None,first_mip=0 if i==14 and deck.get('resident') else None)
         presets.append(names_by_index[0])
+        if deck.get('wood_texture'):
+            wood_names={}
+            for field in wood_source.ptr:
+                at=field+struct.unpack_from('<q',wood_source.data,field)[0]
+                value=wood_source.data[at:wood_source.data.index(0,at)]
+                if value.lower().endswith(b'/deck_gen_popsicle_c'):
+                    wood_names[value]=wood_name.encode()
+            assert wood_names
+            wood_map={wood_source.f[:16]:wood_file,wood_source.data[:16]:wood_export}
+            wood_rids={u64(wood_source.data,field):wood_rid for field in wood_source.res}
+            wood_raw=ebx_edit(wood_source.b,identity,'wood',wood_map,wood_names,wood_rids)
+            wood_asset=Ebx(wood_raw);wood_raw=bytearray(wood_raw)
+            struct.pack_into('<HH',wood_raw,wood_asset.start+64,1024,2048)
+            add(12,wood_name,bytes(wood_raw))
+            wood_header=bytearray(base[13])
+            # Base textures need flag 1; the artwork flags make the wood load black.
+            struct.pack_into('<H',wood_header,20,1)
+            struct.pack_into('<HH',wood_header,22,1024,2048)
+            wood_sizes=[max(1,((1024>>n)+3)//4)*max(1,((2048>>n)+3)//4)*16 for n in range(12)]
+            assert len(deck['wood_texture'])==sum(wood_sizes)
+            wood_header[30:34]=bytes((12,0,0,12))
+            struct.pack_into('<I',wood_header,36,0)
+            wood_header[40:56]=wood_chunk
+            struct.pack_into('<15I',wood_header,56,*(wood_sizes+[0]*3))
+            struct.pack_into('<I',wood_header,116,len(deck['wood_texture']))
+            add(13,wood_name,bytes(wood_header),rid=wood_rid)
+            add(14,str(uuid.UUID(bytes_le=wood_chunk)),deck['wood_texture'],chunk_sizes=wood_sizes,first_mip=0)
     for i in range(len(ts)):
         if i in PER_DECK:continue
         raw=base[i];meta=None

@@ -5,5 +5,5 @@ if __name__ == '__main__':
         from build_check import check
         check(sys.argv[2])
     else:
-        from studio_ui import main
+        from qt_ui import main
         main()

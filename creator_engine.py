@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 import struct
-from PIL import Image, ImageOps, ImageDraw, ImageFont
+from PIL import Image, ImageOps, ImageDraw, ImageFont, ImageStat, ImageColor
 ROOT=Path(__file__).resolve().parent
 sys.path.insert(0,str(ROOT/'engine'))
 import ispc_texcomp as tc
@@ -139,8 +139,6 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
     projects = copy.deepcopy(projects)
     with tempfile.TemporaryDirectory(prefix='lenticular-framing-') as scratch:
         for number, project in enumerate(projects):
-            if project.get('wood_tint'):
-                raise ValueError('Custom wood tint is preview-only in this build.')
             originals = project['images']
             if Path(dest).resolve() in [Path(path).resolve() for path in originals if path]:
                 raise ValueError('Choose a separate output file.')
@@ -207,10 +205,22 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         else:
             texture=encode(atlas(a,b,fit,background),progress)
             thumb=thumbnail(a,b,custom,fit,background)
-        decks.append(dict(name=name,mode='depth' if mode=='layers' else 'classic' if mode=='gif' else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' else None,resident=mode=='gif',thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
+        wood=None
+        if project.get('wood_tint'):
+            import math
+            colour=ImageColor.getrgb(project['wood_tint'])
+            intensity=float(project.get('wood_intensity',1))
+            if len(colour)!=3 or not math.isfinite(intensity) or not 0<=intensity<=2:
+                raise ValueError('Wood intensity must be between 0 and 200%.')
+            grain=Image.open(deck_archive.ROOT.parent/'assets/board-wood.png').convert('L')
+            average=max(1,ImageStat.Stat(grain).mean[0])
+            tinted=Image.merge('RGB',tuple(grain.point([min(255,round(value/average*channel*intensity)) for value in range(256)]) for channel in colour))
+            progress('Preparing wood colour texture…')
+            wood=b''.join(encode_thumbnail(tinted.resize((max(4,1024>>level),max(4,2048>>level)),Image.Resampling.LANCZOS)) for level in range(12))
+        decks.append(dict(name=name,mode='depth' if mode=='layers' else 'classic' if mode=='gif' else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' else None,resident=mode=='gif',wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
     result=deck_archive.build(decks,raw_cas,title,author.strip(),independent_shader=True)
     check_head,check_blobs=split_mod(result)
-    assert len(check_blobs)==14*len(projects)+13+2*int(any(p.get('mode')=='gif' for p in projects))
+    assert len(check_blobs)==14*len(projects)+13+2*int(any(p.get('mode')=='gif' for p in projects))+3*sum(bool(p.get('wood_tint')) for p in projects)
     dest.parent.mkdir(parents=True,exist_ok=True)
     temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
     progress('Export complete.');return dest

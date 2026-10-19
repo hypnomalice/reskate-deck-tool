@@ -13,12 +13,18 @@ from tkinter import ttk, filedialog, messagebox, colorchooser
 from PIL import Image, ImageTk, ImageDraw, ImageOps, ImageChops
 import creator_engine as engine
 import image_placement
+import effect_preview
+import preview_depth
+from app_version import APP_VERSION
 from tutorials import open_guide
 
 BG, FIELD, TEXT, MUTED = '#242629', '#33373d', '#e3e5e8', '#aeb4be'
 MODES = {'classic': 'Lenticular', 'depth': '3D (depth map)', 'layers': '3D (foreground/background)', 'gif': 'Animated GIF'}
 APP_NAME = 'ReSkate Deck Tool - Beta'
 QUOTES = [
+    'shoutouts shwang',
+    '@everyone',
+    'shoutouts No, Noble and c00lshapes',
     'PM died for this.',
     "You don't even skate bro",
     'Sofi was here <3',
@@ -93,6 +99,13 @@ class Creator:
         self.strength, self.convergence, self.bands = tk.DoubleVar(value=.04), tk.DoubleVar(value=.5), tk.DoubleVar(value=1)
         self.invert, self.angle = tk.BooleanVar(value=False), tk.DoubleVar(value=0)
         self.wood_mode = tk.StringVar(value='Original wood')
+        self.wood_intensity = tk.DoubleVar(value=1)
+        self.show_trucks = tk.BooleanVar(value=True)
+        self.large_preview = None
+        self.render_job, self.last_frame, self.last_frame_key, self.last_draw_key = None, None, None, None
+        self.preview_revision, self.preview_worker, self.preview_pending = 0, False, None
+        self.atlas_preview, self.update_release = None, None
+        self.gif_frames = {}
         self.status = tk.StringVar(value='Choose two graphics to begin.')
         self.selected, self.decks, self.loading = 0, [], False
         self.placements = [dict(zoom=1, x=0, y=0), dict(zoom=1, x=0, y=0)]
@@ -112,6 +125,8 @@ class Creator:
         header = ttk.Frame(root, padding=(18, 12))
         header.grid(row=0, column=0, sticky='ew')
         ttk.Label(header, text=APP_NAME, font=('Segoe UI', 12, 'bold')).pack(side='left')
+        self.update_button = ttk.Button(header, text='Update available', command=self.open_update)
+        Tooltip(self.update_button, lambda: f'Open {self.update_release.version} on GitHub. Current version: {APP_VERSION}.' if self.update_release else '')
         for text, action in [('Guide', lambda: open_guide(root)), ('Save', self.save_project), ('Open', self.load_project)]:
             ttk.Button(header, text=text, command=action).pack(side='right', padx=4)
         body = ttk.Frame(root, padding=(18, 0))
@@ -155,10 +170,16 @@ class Creator:
         centre = ttk.Frame(body, padding=(16, 8))
         self.centre = centre
         centre.grid(row=0, column=1, sticky='nsew')
-        ttk.Label(centre, text='Deck preview').pack(anchor='w')
+        preview_header=ttk.Frame(centre)
+        preview_header.pack(fill='x')
+        ttk.Label(preview_header, text='Deck preview').pack(side='left')
+        ttk.Button(preview_header,text='Enlarge',command=self.enlarge_preview).pack(side='right')
+        ttk.Button(preview_header,text='Lens detail',command=self.lens_detail).pack(side='right',padx=6)
         self.preview = tk.Canvas(centre, width=270, height=480, bg='#1d1f22', highlightthickness=0)
         self.preview.pack(fill='both', expand=True, pady=12)
         self.preview.bind('<Configure>', lambda event: self.render())
+        self.preview.bind('<Double-Button-1>', lambda event:self.enlarge_preview())
+        ttk.Checkbutton(centre,text='Approximate truck positions',variable=self.show_trucks,command=self.render).pack(anchor='w')
         self.angle_control = ttk.Scale(centre, from_=-1, to=1, variable=self.angle, command=self.render)
         self.angle_control.pack(fill='x', pady=8)
         self.placement_controls = ttk.Frame(centre)
@@ -226,13 +247,16 @@ class Creator:
         row = ttk.Frame(right)
         row.pack(fill='x', pady=(10, 5))
         ttk.Label(row, text='Base colour (wood)').pack(side='left')
-        self.help(row, 'Exposed wood is separate from the graphic. Custom tint is preview-only in this test build; Original wood exports normally.')
+        self.help(row, 'Changes the exposed wood using a separate base colour texture for this deck. Intensity controls brightness. Artwork is separate. The preview is approximate; lighting in game affects the result.')
         row = ttk.Frame(right)
         row.pack(fill='x')
-        wood = ttk.Combobox(row, textvariable=self.wood_mode, values=['Original wood', 'Custom tint (preview)'], state='readonly', width=20)
+        wood = ttk.Combobox(row, textvariable=self.wood_mode, values=['Original wood', 'Custom tint'], state='readonly', width=20)
         wood.pack(side='left', fill='x', expand=True)
         wood.bind('<<ComboboxSelected>>', self.render)
         ttk.Button(row, text='Colour…', command=self.choose_wood).pack(side='left', padx=(5, 0))
+        self.wood_intensity_label=tk.StringVar(value='Wood intensity 100%')
+        ttk.Label(right,textvariable=self.wood_intensity_label).pack(anchor='w',pady=(8,3))
+        ttk.Scale(right,from_=0,to=2,variable=self.wood_intensity,command=self.render).pack(fill='x')
         ttk.Label(right, text='In-game thumbnail').pack(anchor='w', pady=(10, 5))
         row = ttk.Frame(right)
         row.pack(fill='x')
@@ -270,10 +294,24 @@ class Creator:
         self.dirty = False
         self.baseline = self.workspace_data()
         root.after(150, self.poll)
+        root.after(1000, self.check_updates)
+
+    def check_updates(self):
+        def run():
+            from updates import check_for_update
+            release = check_for_update()
+            if release:
+                self.events.put(('update_available', release))
+        threading.Thread(target=run, daemon=True).start()
+
+    def open_update(self):
+        if self.update_release:
+            import webbrowser
+            webbrowser.open(self.update_release.url)
 
     def rotate_quote(self):
         self.quote = random.choice([quote for quote in QUOTES if quote!=self.quote])
-        self.root.title(APP_NAME+' — '+self.quote)
+        self.root.title(APP_NAME+' v'+APP_VERSION+' — '+self.quote)
 
     def style(self):
         style = ttk.Style(self.root)
@@ -321,7 +359,7 @@ class Creator:
             return
         if self.is_gif() and self.animation_clip:
             self.render()
-            self.animation_job = self.root.after(15, self.animate)
+            self.animation_job = self.root.after(16, self.animate)
 
     def update_mode(self):
         if self.is_gif():
@@ -372,6 +410,7 @@ class Creator:
         data['animation'] = dict(quality={'Standard (512 × 4096)':1,'High (1024 × 8192)':2,'Ultra (2048 × 16384)':4}[self.gif_quality.get()])
         data['background_fit'] = self.background_fit.get()
         data['wood_tint'] = self.wood_colour if self.wood_mode.get() != 'Original wood' else None
+        data['wood_intensity'] = self.wood_intensity.get()
         return data
 
     def read_image(self, path, index):
@@ -462,7 +501,8 @@ class Creator:
             self.thumbnail_path = data.get('thumbnail')
             self.placements = copy.deepcopy(data.get('placement', [dict(zoom=1, x=0, y=0)]*2))
             self.wood_colour = data.get('wood_tint') or '#b98a56'
-            self.wood_mode.set('Custom tint (preview)' if data.get('wood_tint') else 'Original wood')
+            self.wood_mode.set('Custom tint' if data.get('wood_tint') else 'Original wood')
+            self.wood_intensity.set(data.get('wood_intensity',1))
             for label, canvas in zip(self.labels, self.canvases):
                 label.configure(text='No image selected')
                 canvas.delete('all')
@@ -499,6 +539,8 @@ class Creator:
         if self.busy:
             return
         self.preview_job = None
+        self.gif_frames.clear()
+        self.last_frame_key = None
         for index, path in enumerate(self.paths):
             if self.is_gif() and index == 1:
                 self.images[index] = None
@@ -535,47 +577,151 @@ class Creator:
         canvas.create_image(0, 0, anchor='nw', image=photo)
 
     def render(self, *args):
+        if self.render_job is None:
+            self.render_job = self.root.after(16, self.render_now)
+
+    def render_now(self):
+        if self.render_job is not None:
+            self.root.after_cancel(self.render_job)
+            self.render_job = None
+        self.wood_intensity_label.set(f'Wood intensity {self.wood_intensity.get()*100:.0f}%')
         if all(image is None for image in self.images):
             self.preview.delete('all')
+            if self.large_preview is not None and self.large_preview.winfo_exists():
+                self.large_preview.delete('all')
             return
+        width = max(40, min(256, (self.preview.winfo_height()-28)//4, self.preview.winfo_width()-32, 140))
+        if self.large_preview is not None and self.large_preview.winfo_exists():
+            width = max(width, min(360, (self.large_preview.winfo_height()-28)//4, self.large_preview.winfo_width()-32))
+        size = (width, width*4)
+        key = (self.preview_revision, self.mode.get(), round(self.angle.get(), 5), self.bands.get(), size)
         if self.is_gif() and self.animation_clip and self.images[0] is not None:
             elapsed=(time.monotonic()-self.animation_start)*1000
             index=self.animation_clip.frame_index(elapsed % self.animation_clip.duration_ms)
-            out=animation_texture.preview_frame(self.animation_clip,index,self.background,self.placements[0])
+            key = (self.preview_revision, 'gif', index, size)
+            frame_key = (index, size)
+            if frame_key not in self.gif_frames:
+                self.gif_frames[frame_key] = animation_texture.preview_frame(self.animation_clip,index,self.background,self.placements[0]).resize(size,Image.Resampling.LANCZOS)
+                while len(self.gif_frames)>4:
+                    self.gif_frames.pop(next(iter(self.gif_frames)))
+            out = self.gif_frames[frame_key]
         elif any(image is None for image in self.images):
             out = next(image for image in self.images if image is not None)
-        elif self.is_depth():
-            if self.is_layers():
-                a = self.images[0].resize((180, 720), Image.Resampling.LANCZOS)
-                b = self.images[1].resize(a.size, Image.Resampling.LANCZOS)
-                out = engine.depth_views.layer_at_angle(a, b, self.angle.get(), self.strength.get(), self.convergence.get(), self.invert.get(),band_intensity=self.bands.get())
-            elif self.depth_preview:
-                out = engine.depth_views.preview(self.depth_preview, self.angle.get(), band_intensity=self.bands.get())
-            else:
-                return
+        elif self.atlas_preview is not None:
+            if key != self.last_frame_key:
+                self.atlas_preview.set_lens_strength(self.bands.get())
+                self.last_frame = self.atlas_preview.render(self.angle.get(), size)
+            out = self.last_frame
         else:
-            front, back = [image.resize((210, 840), Image.Resampling.LANCZOS) for image in self.images]
-            out = Image.new('RGB', front.size)
-            view_angle = self.angle.get() * .22
-            for x in range(front.width):
-                lens_phase = ((x + .5) / front.width * 112) % 1 - .5
-                crossover = max(0, min(1, (view_angle - lens_phase * .2) / .08 + .5))
-                blend = .02 + .96 * crossover * crossover * (3 - 2 * crossover)
-                strip = (x, 0, x + 1, front.height)
-                out.paste(Image.blend(front.crop(strip), back.crop(strip), blend), (x, 0))
-        height = min(560, max(200, self.preview.winfo_height()-28))
+            return
+        self.last_frame_key = key
+        self.update_lens_detail()
+        draw_key = (key, self.wood_colour, self.wood_mode.get(), self.wood_intensity.get(), self.show_trucks.get(),
+                    self.preview.winfo_width(), self.preview.winfo_height(),
+                    (self.large_preview.winfo_width(),self.large_preview.winfo_height()) if self.large_preview is not None and self.large_preview.winfo_exists() else None)
+        if draw_key == self.last_draw_key:
+            return
+        self.last_draw_key = draw_key
+        self.draw_deck_preview(self.preview,out,560)
+        if self.large_preview is not None and self.large_preview.winfo_exists():
+            self.draw_deck_preview(self.large_preview,out)
+
+    def draw_deck_preview(self,canvas,out,limit=None):
+        height = max(80,min(canvas.winfo_height()-28,(canvas.winfo_width()-32)*4))
+        if limit is not None:
+            height=min(limit,height)
         width = height//4
         out = out.resize((width, height), Image.Resampling.LANCZOS).convert('RGBA')
         mask = Image.new('L', out.size)
         ImageDraw.Draw(mask).rounded_rectangle((0,0,width-1,height-1), radius=width//2, fill=255)
         out.putalpha(ImageChops.multiply(out.getchannel('A'),mask))
         photo = ImageTk.PhotoImage(out)
-        self.preview.image = photo
-        self.preview.delete('all')
-        x, y = (self.preview.winfo_width()-width)//2, (self.preview.winfo_height()-height)//2
+        canvas.image = photo
+        canvas.delete('all')
+        x, y = (canvas.winfo_width()-width)//2, (canvas.winfo_height()-height)//2
         colour = self.wood_colour if self.wood_mode.get() != 'Original wood' else '#8c704e'
-        self.preview.create_rectangle(x-2, y+width//2, x+width+2, y+height-width//2, fill=colour, outline=colour)
-        self.preview.create_image(x, y, anchor='nw', image=photo)
+        if self.wood_mode.get()!='Original wood':
+            colour='#'+''.join(f'{min(255,round(int(colour[i:i+2],16)*self.wood_intensity.get())):02x}' for i in (1,3,5))
+        canvas.create_rectangle(x-3, y+width//2, x+width+3, y+height-width//2, fill=colour, outline=colour)
+        canvas.create_image(x, y, anchor='nw', image=photo)
+        if self.show_trucks.get():
+            for centre in (.225,.775):
+                cy=y+height*centre
+                canvas.create_rectangle(x+width*.29,cy-height*.025,x+width*.71,cy+height*.025,outline='#b7bec5',dash=(4,3),width=1)
+                canvas.create_line(x-width*.08,cy,x+width*1.08,cy,fill='#b7bec5',dash=(4,3),width=2)
+                for bx in (.36,.64):
+                    for by in (-.017,.017):
+                        px,py=x+width*bx,cy+height*by
+                        canvas.create_oval(px-2,py-2,px+2,py+2,fill='#b7bec5',outline='')
+
+    def enlarge_preview(self):
+        if self.large_preview is not None and self.large_preview.winfo_exists():
+            self.large_preview.winfo_toplevel().lift()
+            return
+        window=tk.Toplevel(self.root)
+        window.title('Deck preview')
+        window.geometry('650x900')
+        window.minsize(360,480)
+        window.columnconfigure(0,weight=1)
+        window.rowconfigure(0,weight=1)
+        self.large_preview=tk.Canvas(window,bg='#1d1f22',highlightthickness=0)
+        self.large_preview.grid(row=0,column=0,sticky='nsew',padx=12,pady=12)
+        self.large_preview.bind('<Configure>',self.render)
+        ttk.Scale(window,from_=-1,to=1,variable=self.angle,command=self.render).grid(row=1,column=0,sticky='ew',padx=20)
+        ttk.Checkbutton(window,text='Approximate truck positions',variable=self.show_trucks,command=self.render).grid(row=2,column=0,pady=8)
+        ttk.Label(window,text='Note: may not reflect 1:1 in game').grid(row=3,column=0,pady=(0,12))
+        window.bind('<Escape>',lambda event:window.destroy())
+        self.render()
+
+    def lens_detail(self):
+        if self.atlas_preview is None or self.is_gif():
+            messagebox.showinfo('Lens detail', 'Choose both images and wait for the effect preview first.')
+            return
+        window = tk.Toplevel(self.root)
+        self.detail_window = window
+        window.title('Lens detail — enlarged centre crop')
+        ttk.Label(window, text='Same viewing angle, enlarged centre crop. Before game lighting.').pack(padx=16,pady=12)
+        row = ttk.Frame(window)
+        row.pack(padx=16)
+        sample = copy.copy(self.atlas_preview)
+        sample.settings = sample.settings.copy()
+        sample.cached_size, sample.cached_samples = None, None
+        self.detail_sample = sample
+        self.detail_revision = self.preview_revision
+        self.detail_key = None
+        self.detail_canvases = []
+        self.detail_labels = []
+        for label in ('Lens texture 0%', 'Current lens texture'):
+            column = ttk.Frame(row)
+            column.pack(side='left',padx=8)
+            title = ttk.Label(column,text=label)
+            title.pack(pady=6)
+            self.detail_labels.append(title)
+            canvas = tk.Canvas(column,width=280,height=280,highlightthickness=0)
+            canvas.pack()
+            self.detail_canvases.append(canvas)
+        ttk.Label(window,text='Move the viewing angle or lens slider to compare.').pack(pady=12)
+        window.bind('<Escape>',lambda event:window.destroy())
+        self.update_lens_detail()
+
+    def update_lens_detail(self):
+        window = getattr(self,'detail_window',None)
+        if window is None or not window.winfo_exists() or self.atlas_preview is None:
+            return
+        if self.detail_revision != self.preview_revision:
+            self.detail_sample = copy.copy(self.atlas_preview)
+            self.detail_sample.settings = self.detail_sample.settings.copy()
+            self.detail_sample.cached_size, self.detail_sample.cached_samples = None, None
+            self.detail_revision = self.preview_revision
+        key = (self.preview_revision,self.angle.get(),self.bands.get())
+        if key == self.detail_key:
+            return
+        self.detail_key = key
+        self.detail_labels[1].configure(text=f'Lens texture {self.bands.get()*100:.0f}%')
+        for canvas,strength in zip(self.detail_canvases,(0,self.bands.get())):
+            self.detail_sample.set_lens_strength(strength)
+            image = self.detail_sample.render(self.angle.get(),(280,280),(.375,.46875,.625,.53125))
+            self.paint(canvas,image,(280,280))
 
     def render_thumbnail(self):
         self.thumb_label.configure(text=Path(self.thumbnail_path).name if self.thumbnail_path else 'Automatic: animation + ANIMATED' if self.is_gif() else 'Automatic: both images + LENTICULAR')
@@ -590,10 +736,10 @@ class Creator:
             self.status.set('Thumbnail: '+str(exc))
 
     def choose_wood(self):
-        colour = colorchooser.askcolor(self.wood_colour, title='Base wood tint (preview only)')[1]
+        colour = colorchooser.askcolor(self.wood_colour, title='Base wood colour')[1]
         if colour:
             self.wood_colour = colour
-            self.wood_mode.set('Custom tint (preview)')
+            self.wood_mode.set('Custom tint')
             self.render()
 
     def adjust_placement(self, index):
@@ -698,8 +844,6 @@ class Creator:
                 engine.validate_name(project['name'])
                 if not (project['images'][0] if project.get('mode') == 'gif' else all(project['images'])):
                     raise ValueError('Choose both images for '+project['name']+'.')
-                if project.get('wood_tint'):
-                    raise ValueError('Custom wood tint is preview-only for now. Choose Original wood before exporting. The tint is saved in your workspace.')
             if len({engine.validate_name(p['name']).casefold() for p in projects}) != len(projects):
                 raise ValueError('Give each deck a different name.')
         except ValueError as exc:
@@ -731,6 +875,23 @@ class Creator:
                 kind, value = self.events.get_nowait()
             except queue.Empty:
                 break
+            if kind == 'update_available':
+                self.update_release = value
+                self.update_button.pack(side='right', padx=8)
+                continue
+            if kind in ('preview_ready', 'preview_failed'):
+                self.preview_worker = False
+                revision, result, thumbnails = value
+                if revision == self.preview_revision:
+                    if kind == 'preview_ready' and result is not None:
+                        self.atlas_preview, self.depth_preview = result, thumbnails
+                        self.last_frame_key = None
+                        self.render()
+                        self.render_thumbnail()
+                    elif kind == 'preview_failed' and not self.busy:
+                        self.status.set('Preview: '+result)
+                self.start_preview_build()
+                continue
             if kind == 'status':
                 self.status.set(value)
                 continue
@@ -772,14 +933,50 @@ class Creator:
         self.render_thumbnail()
 
     def rebuild_depth(self):
+        self.preview_revision += 1
+        self.atlas_preview = None
         self.depth_preview = None
-        if self.is_depth() and all((im is not None for im in self.images)):
-            image = self.images[0].resize((128, 512), Image.Resampling.LANCZOS)
-            depth = self.images[1].resize(image.size, Image.Resampling.BILINEAR)
-            if self.is_layers():
-                self.depth_preview = engine.depth_views.layer_views(image, depth, self.strength.get(), self.convergence.get(), self.invert.get())
-            else:
-                self.depth_preview = engine.depth_views.views(image, depth, self.strength.get(), self.convergence.get())
+        self.last_frame_key = self.last_draw_key = None
+        self.preview_pending = None
+        if self.is_gif() or not all(image is not None for image in self.images):
+            return
+        for canvas in (self.preview, self.large_preview):
+            if canvas is not None and canvas.winfo_exists():
+                canvas.delete('all')
+                canvas.create_text(canvas.winfo_width()//2,canvas.winfo_height()//2,text='Preparing effect preview…',fill=MUTED)
+        mode = 'layers' if self.is_layers() else 'depth' if self.is_depth() else 'classic'
+        self.preview_pending = (self.preview_revision, mode, tuple(image.copy() for image in self.images),
+                                self.strength.get(), self.convergence.get(), self.bands.get(), self.invert.get())
+        self.start_preview_build()
+
+    def start_preview_build(self):
+        if self.preview_worker or self.preview_pending is None:
+            return
+        revision, mode, images, strength, convergence, bands, reverse = self.preview_pending
+        self.preview_pending = None
+        self.preview_worker = True
+        def run():
+            thumbnails = None
+            try:
+                def progress(message):
+                    if revision != self.preview_revision:
+                        raise InterruptedError()
+                if mode == 'classic':
+                    atlas = engine.atlas(*images)
+                elif mode == 'layers':
+                    atlas = engine.layer_atlas.pack(*images, strength, convergence, bands, reverse)
+                else:
+                    views = preview_depth.views(*images, strength, convergence, progress)
+                    atlas = engine.depth_views.pack(views, bands, balanced=True)
+                    thumbnails = [views[0], views[-1]]
+                progress('')
+                preview = effect_preview.AtlasPreview(atlas, mode)
+                self.events.put(('preview_ready',(revision, preview, thumbnails)))
+            except InterruptedError:
+                self.events.put(('preview_ready',(revision, None, None)))
+            except Exception as exc:
+                self.events.put(('preview_failed',(revision, str(exc), None)))
+        threading.Thread(target=run, daemon=True).start()
 
     def reset_thumbnail(self):
         if self.busy:

@@ -24,6 +24,24 @@ Older lenticular exports must be re-exported
 with this version, or have their shared renderer upgraded, before combining them
 with animated mods. Do not enable an old pack and its replacement together.
 
+## Preview and updates
+
+The board stays full-height in the centre, with separately scrolling image settings
+on the left and lens/effect/placement controls on the right. Position controls redraw
+while dragging; the complete effect refreshes after release. The previous preview
+stays visible during background updates, and GIF playback keeps its position.
+
+The effect preview samples the exported atlas layout in linear colour, matching the
+shader's flip direction, depth-view blending, lens-strength decoding and layer alpha.
+Depth views prepare in the background; angle changes reuse the prepared texture.
+This is an effect preview, not a copy of the game's renderer: lighting, reflections,
+texture compression, camera geometry and the truck guides remain approximate.
+
+On startup the app checks this repository's GitHub releases in the background.
+An **Update available** button appears only for a newer release. It opens that release
+on GitHub; it does not replace the executable or install anything automatically.
+Beta builds also check beta releases. Offline and rate-limited checks stay quiet.
+
 Dark artwork in gameplay and sticker corruption remain known issues in this beta.
 
 ## Download and run
@@ -72,7 +90,10 @@ Model homepages: [Small](https://huggingface.co/depth-anything/Depth-Anything-V2
 - Use distinct deck names, including across separately exported mods: identities derive from names.
 - Multiple decks and separate mods have been tested, but no unlimited collection size is guaranteed.
 - Foreground/background mode can show sectional movement in gameplay.
-- Custom wood tint is preview-only; keep Original wood when exporting.
+- Custom wood tint exports a private wood texture for each tinted deck. Choose
+  a colour and adjust Wood intensity from 0–200%; Original wood retains the game's
+  natural texture. Edge colours have been checked in the board menu; gameplay and
+  broken-board checks are still pending for this feature.
 - Updates to the shared renderer across independently published mod versions need more testing.
 - Projects reference image files rather than embedding them.
 
@@ -80,6 +101,16 @@ Board Break, classic flip, depth and multiple-deck exports have been tested on t
 author's setup. Test your own artwork in the menu, gameplay and on a broken board.
 
 ## Run from source (Windows, Python 3.12)
+
+The Cutroom interface uses Qt (PySide6 Essentials). The Windows EXE bundles it;
+no separate Qt installation is needed. Deck tabs retain each deck's settings.
+The numeric boxes and +/− buttons allow precise adjustment alongside the sliders.
+
+Depth previews use a fast interactive approximation; exports retain the full
+depth-buffer renderer. Lens detail compares 0% with the current setting using
+an enlarged crop selected from a responsive area of the artwork. The lens slider
+controls fine angle variation, not a striped overlay. It can be subtle with low
+parallax or flat artwork. Preview lighting and board curvature remain approximate.
 
 ```powershell
 py -3.12 -m venv .venv
@@ -98,7 +129,7 @@ The executable appears in `dist/`. It includes the runtime and required template
 the optional depth model is downloaded separately.
 
 To run the packaged export check, launch the EXE with `--self-test` and an output folder.
-It creates a classic/depth test pack and `build-check.json` with the result. This checks
+It creates a classic/depth/GIF test pack with coloured wood and `build-check.json` with the result. This checks
 archive structure, resource references and dependencies, not game compatibility.
 
 ## Licence and credits
