@@ -30,5 +30,5 @@ a.binaries = [(dest, source, kind) for dest, source, kind in a.binaries
               if not (dest.lower() in {'icuuc.dll','icudt78.dll'} and 'poppler' in source.lower())]
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, a.binaries, a.datas,
-    name='ReSkate Deck Tool - Beta', console=False,
+    name='ReSkate Deck Tool', console=False,
     icon=str(root / 'assets/app-icon.ico'))

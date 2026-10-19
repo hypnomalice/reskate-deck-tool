@@ -155,7 +155,7 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
                 fit = background_fit if background_fit and index==1 else project.get('fit','Stretch')
                 image = image_placement.frame(path, fit, project.get('background','#ffffff'),
                     placements[index], alpha=project.get('mode')=='layers' and index==0,
-                    depth=project.get('mode')=='depth' and index==1)
+                    depth=project.get('mode') in ('depth','ghost') and index==1)
                 target = Path(scratch)/f'{number}-{index}.png'
                 image.save(target)
                 project['images'][index] = str(target)
@@ -176,7 +176,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         names.add(name.casefold())
         a,b=project['images'];fit=project.get('fit','Stretch');background=project.get('background','#ffffff');custom=project.get('thumbnail')
         mode=project.get('mode','classic')
-        if mode not in ['classic','depth','layers','gif']:raise ValueError('Unsupported lenticular mode.')
+        if mode not in ['classic','depth','layers','gif','ghost']:raise ValueError('Unsupported deck mode.')
         if fit not in ['Stretch','Crop to fill','Fit entire image']:raise ValueError('Choose a supported image sizing option.')
         if dest in [Path(p).resolve() for p in [a,b,custom] if p]+[(ROOT/'engine/template.fbmod').resolve()]:raise ValueError('Choose a separate output file.')
         progress(f'Deck {number} of {len(projects)}: {name}')
@@ -186,7 +186,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             texture=encode(packed,progress,profile='fast',mipmaps=False)
             first=animation_texture.preview_frame(clip,0,background,(project.get('placement') or [{}])[0])
             thumb=thumbnail(first,first,custom,background=background,label='ANIMATED')
-        elif mode in ['depth','layers']:
+        elif mode in ['depth','layers','ghost']:
             settings=project.get('depth',{})
             if mode=='layers':
                 front=depth_views.layer_image(a,fit)
@@ -194,13 +194,19 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
                 strength=settings.get('strength',.08)
                 motion=settings.get('convergence',.5)
                 reverse=settings.get('invert',False)
-                texture=encode(layer_atlas.pack(front,back,strength,motion,settings.get('bands',.25),reverse),progress)
+                texture=encode(layer_atlas.pack(front,back,strength,motion,settings.get('bands',.25) if project.get('lenticular',True) else 0,reverse),progress)
                 views=depth_views.layer_views(front,back,strength,motion,reverse,progress,view_count=2)
             else:
                 image=artwork(a,fit,background)
                 depth=depth_views.depth_image(b,fit,invert=settings.get('invert',False))
-                views=depth_views.views(image,depth,settings.get('strength',.04),settings.get('convergence',.5),progress)
-                texture=encode(depth_views.pack(views,settings.get('bands',1),balanced=True),progress)
+                if mode=='ghost' or not project.get('lenticular',True):
+                    import smooth_effect
+                    packed=smooth_effect.pack(image,depth,settings.get('strength',.075),settings.get('convergence',.5),mode=='ghost')
+                    texture=encode(packed,progress,mipmaps=False)
+                    views=[image,image]
+                else:
+                    views=depth_views.views(image,depth,settings.get('strength',.04),settings.get('convergence',.5),progress)
+                    texture=encode(depth_views.pack(views,settings.get('bands',1),balanced=True),progress)
             thumb=thumbnail(views[0],views[-1],custom,fit,background)
         else:
             texture=encode(atlas(a,b,fit,background),progress)
@@ -217,10 +223,11 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             tinted=Image.merge('RGB',tuple(grain.point([min(255,round(value/average*channel*intensity)) for value in range(256)]) for channel in colour))
             progress('Preparing wood colour texture…')
             wood=b''.join(encode_thumbnail(tinted.resize((max(4,1024>>level),max(4,2048>>level)),Image.Resampling.LANCZOS)) for level in range(12))
-        decks.append(dict(name=name,mode='depth' if mode=='layers' else 'classic' if mode=='gif' else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' else None,resident=mode=='gif',wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
+        continuous=mode=='ghost' or (mode=='depth' and not project.get('lenticular',True))
+        decks.append(dict(name=name,mode='depth' if mode=='layers' else 'classic' if mode in ('gif','ghost') else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' or continuous else None,resident=mode=='gif' or continuous,wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
     result=deck_archive.build(decks,raw_cas,title,author.strip(),independent_shader=True)
     check_head,check_blobs=split_mod(result)
-    assert len(check_blobs)==14*len(projects)+13+2*int(any(p.get('mode')=='gif' for p in projects))+3*sum(bool(p.get('wood_tint')) for p in projects)
+    assert len(check_blobs)==14*len(projects)+13+2*int(any(d.get('resident') for d in decks))+3*sum(bool(p.get('wood_tint')) for p in projects)
     from fbmod_compat import compatible
     progress('Applying sticker compatibility…')
     result, _ = compatible(result)

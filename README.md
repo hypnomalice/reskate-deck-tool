@@ -1,7 +1,7 @@
 
 # ReSkate Deck Tool
 
-This is a tool for creating lenticular effect decks
+Create Animated / GIF, Lenticular, Depth Map, Foreground / Background and Ghost Rare decks for ReSkate.
 
 The source code is here, we had to use ai assistance to finally get the damn thing working, so any help removing the ai code and getting it fully human would be greatly appreciated
 
@@ -52,3 +52,23 @@ existing FBMODs...**, then import the repaired copies and replace the older
 versions in ReSkate Studio. No project files or source images are needed.
 New beta.3 exports include both the resource-count and global-texture fixes.
 Do not install a probe mod as a dependency or workaround.
+
+
+### Version 1.0
+
+The first full release includes Ghost Rare with silver shading, depth-guided
+holographic colour and smooth depth motion. New projects start in Animated / GIF.
+Depth Map and Foreground / Background are smooth by default, with an optional
+**Enable lenticular** setting. Lenticular keeps the stepped lens effect; Ghost
+Rare always stays smooth. Older saved projects retain their previous behaviour.
+
+**Update older effect packs you use together** with File > Update existing
+FBMODs, then re-import the compatible copies in shader-capable ReSkate Studio.
+The packs share a renderer: an older pack above a new one can override support
+for Ghost Rare and smooth depth. Until all packs are updated, keep a 1.0 export
+above older effect packs in the mod load order. Neither Ghost Rare Prototype nor
+Sticker Mask Probe is required.
+
+**Known issues:** shadows and banding in gameplay remain unresolved. Work on
+resolving both will continue in a future update. Preview lighting differs from
+in-game lighting. Clean-machine testing remains pending.

@@ -169,6 +169,7 @@ def compatible(data):
             struct.pack_into('<H', raw, asset.start + offset, value)
         archive.replace(colour_index, raw)
     for record in resources:
+        resource_data = (assets / record['file']).read_bytes()
         i = archive.find(record['kind'], record['name'])
         if i is None:
             if record['name'] != 'characters/lua/luaskateboardcompositor':
@@ -184,10 +185,14 @@ def compatible(data):
             if struct.unpack_from('<I', existing, old_tail + 12)[0] != 16:
                 raise UnsupportedMod('The shader metadata layout is not supported.')
             existing[old_tail + 16:old_tail + 32] = descriptor[new_tail + 16:new_tail + 32]
+            # Shader bytecode grows when effects are added. Its native metadata
+            # must describe the actual container, not an older manifest copy.
+            struct.pack_into('<I', existing, old_tail + 16,
+                             struct.unpack_from('<I', resource_data, 16)[0])
             descriptor = existing
         struct.pack_into('<I', descriptor, 1, i)
         archive.descriptors[i] = descriptor
-        archive.replace(i, (assets / record['file']).read_bytes())
+        archive.replace(i, resource_data)
     return archive.bytes(), len(presets)
 
 

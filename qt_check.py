@@ -18,6 +18,10 @@ def check(folder, projects):
     layers = copy.deepcopy(window.decks[0])
     layers.update(mode='layers',name='Layers interface check')
     window.decks.append(layers)
+    for mode in ('ghost','depth'):
+        smooth=copy.deepcopy(window.decks[1])
+        smooth.update(mode=mode,lenticular=False,name=f'{mode} smooth interface check')
+        window.decks.append(smooth)
     modes = []
     try:
         for index in range(len(window.decks)):
@@ -34,11 +38,11 @@ def check(folder, projects):
             window.grab().save(str(Path(folder)/f'Cutroom-{window.current()["mode"]}.png'))
         window.selected = 1
         window.apply_deck()
-        assert window.mode.currentIndex()==1
+        assert window.current()['mode']=='depth'
         window.strength.spin.setValue(12)
         assert window.strength.slider.value()==12
         assert window.workspace()['decks'][1]['depth']['strength']==.12
-        assert window.tabs.count()==len(projects)+1
+        assert window.tabs.count()==len(projects)+3
         start = time.monotonic()
         while window.renderer is None:
             app.processEvents()

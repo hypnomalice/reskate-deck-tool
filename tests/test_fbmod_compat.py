@@ -10,6 +10,28 @@ from fbmod_compat import Archive, UnsupportedMod, compatible, unpack, update_fil
 
 
 class CompatibilityTests(unittest.TestCase):
+    def test_shader_metadata_matches_each_installed_container(self):
+        import json
+        import deck_archive
+        assets=deck_archive.ROOT.parent/'assets/sticker-compat'
+        records=json.loads((assets/'manifest.json').read_text())
+        # Reproduce a stale manifest after a shader grows. Runtime export must
+        # derive the size from the new bytecode even in this case.
+        for record in records[:6]:
+            descriptor=bytearray.fromhex(record['descriptor'])
+            _,_,tail=deck_archive.descriptor_parts(descriptor)
+            struct.pack_into('<I',descriptor,tail+16,1)
+            record['descriptor']=descriptor.hex()
+        with patch('fbmod_compat.json.loads',return_value=records):
+            updated,_=compatible(self.original)
+        archive=Archive(updated)
+        for record in records[:6]:
+            index=archive.find(record['kind'],record['name'])
+            raw=unpack(archive.blobs[index])
+            _,_,tail=deck_archive.descriptor_parts(archive.descriptors[index])
+            self.assertEqual(struct.unpack_from('<I',archive.descriptors[index],tail+16)[0],
+                             struct.unpack_from('<I',raw,16)[0],record['name'])
+
     @classmethod
     def setUpClass(cls):
         cls.folder = tempfile.TemporaryDirectory()

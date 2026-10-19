@@ -47,6 +47,9 @@ class AtlasPreview:
         v = top + v * (bottom - top)
         angle = float(np.clip(angle, -1, 1))
         phase = np.mod(u * 112, 1) - .5
+        if self.mode in ('smooth','ghost'):
+            import smooth_effect
+            return display(smooth_effect.render(self,angle,u,v))
         sample_key = (size, region)
         if self.cached_size != sample_key:
             if self.mode == 'classic':

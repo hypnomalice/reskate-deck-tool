@@ -59,6 +59,13 @@ def check(folder):
             return struct.unpack_from('<'+str(count)+'I',descriptor,end+5)
         assert len(global_bundles(empty)) == 6
         assert global_bundles(empty) == global_bundles(lua)
+        import json as _json
+        assets=engine.ROOT/'assets/sticker-compat'
+        for record in _json.loads((assets/'manifest.json').read_text())[:6]:
+            index=archive.find(record['kind'],record['name'])
+            shader=unpack(archive.blobs[index])
+            _,_,tail=engine.deck_archive.descriptor_parts(archive.descriptors[index])
+            assert struct.unpack_from('<I',archive.descriptors[index],tail+16)[0]==struct.unpack_from('<I',shader,16)[0]
         for i in range(len(archive.blobs)):
             kind,name = archive.key(i)
             if kind == 2 and name.endswith('_color'):
@@ -104,6 +111,16 @@ def check(folder):
         assert newer_release([],APP_VERSION) is None
         report = dict(ok=True,version=APP_VERSION,resources=len(blobs),unique_textures=len(textures),onnxruntime=onnxruntime.__version__,output=str(output))
         report['interface'] = interface
+        smooth_projects=[dict(name=f'Packaged {mode}',mode=mode,lenticular=False,
+                              images=[images[0],str(depth.resolve())],
+                              depth=dict(strength=.075,convergence=.5,bands=0))
+                         for mode in ('ghost','depth')]
+        new_output=engine.export_pack(smooth_projects,folder/'Ghost and Smooth Pack.fbmod')
+        new_archive=Archive(new_output.read_bytes())
+        assert compatible(new_output.read_bytes())[0]==new_output.read_bytes()
+        assert global_bundles(new_archive.descriptors[new_archive.find(1,'characters/customization/reskate/board_bottomart/lenticular_black_rgb')])==global_bundles(lua)
+        report['new_modes_output']=str(new_output)
+        report['new_modes_resources']=len(new_archive.blobs)
     except Exception:
         import traceback
         report = dict(ok=False,error=traceback.format_exc())

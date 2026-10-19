@@ -190,8 +190,8 @@ class DetailImage(QWidget):
             painter.drawPixmap((self.width()-image.width())//2,(self.height()-image.height())//2,image)
 
 
-def default_deck(name='My Lenticular Deck'):
-    return dict(version=4,name=name,mode='classic',author='',images=[None,None],fit='Stretch',
+def default_deck(name='My Deck'):
+    return dict(version=6,name=name,mode='gif',lenticular=False,author='',images=[None,None],fit='Stretch',
         background_fit='Crop to fill',background='#ffffff',thumbnail=None,
         placement=[dict(zoom=1,x=0,y=0),dict(zoom=1,x=0,y=0)],
         depth=dict(strength=.04,convergence=.5,bands=1,invert=False),
@@ -284,6 +284,7 @@ class Creator(QMainWindow):
         for source in decks:
             deck = default_deck()
             deck.update(source)
+            deck['lenticular']=source.get('lenticular',True)
             if deck['mode'] not in MODES or len(deck['images'])!=2:
                 raise ValueError('Invalid deck settings.')
             deck['images'] = [str((Path(path).parent/p).resolve()) if p else None for p in deck['images']]
@@ -485,7 +486,7 @@ class Creator(QMainWindow):
         form.addRow('Author',self.author)
         effect = QHBoxLayout()
         effect.addWidget(self.mode)
-        help_button('Lenticular flips between two pictures as the angle changes.\nDepth map gives one image depth using a greyscale map.\nForeground/background moves two layers independently.\nAnimated GIF loops an animation on the underside.',effect)
+        help_button('Animated / GIF plays an animation.\nLenticular flips between two pictures with lens bands.\nDepth Map and Foreground / Background move smoothly unless Enable lenticular is selected.\nGhost Rare combines smooth depth, silver shading and depth-guided holographic sheen.',effect)
         form.addRow('Effect',effect)
         left.addLayout(form)
         group = QGroupBox('Images')
@@ -638,6 +639,12 @@ class Creator(QMainWindow):
         self.convergence.changed.connect(self.changed)
         self.bands.changed.connect(self.lens_changed)
         self.invert = QCheckBox('Reverse depth')
+        self.lenticular = QCheckBox('Enable lenticular')
+        self.lenticular.toggled.connect(self.changed)
+        lensrow=QHBoxLayout()
+        lensrow.addWidget(self.lenticular)
+        self.lenticular_help=help_button('Adds lens banding and stepped transitions as the deck tilts. Leave off for smooth depth movement.',lensrow)
+        effects.addLayout(lensrow)
         self.invert.toggled.connect(self.changed)
         effects.addWidget(self.invert)
         inspector_layout.addWidget(effectbox)
@@ -656,7 +663,7 @@ class Creator(QMainWindow):
         outer.addWidget(splitter,1)
         footer = QHBoxLayout()
         disclaimer = QLabel('<u>DISCLAIMER</u>')
-        disclaimer.setToolTip("This tool is in beta, like genuinely.\nIf something breaks, we're sorry, make\na note of it and report it")
+        disclaimer.setToolTip("If something breaks, please report it.\nIn-game shadows and banding are known issues\nand are being worked on.")
         footer.addWidget(disclaimer)
         self.status = QLabel('Choose artwork to begin.')
         self.status.setObjectName('muted')
@@ -675,7 +682,7 @@ class Creator(QMainWindow):
         if self.loading:
             return
         d = self.current()
-        d.update(name=self.name.text(),author=self.author.text(),mode=list(MODES)[self.mode.currentIndex()],fit=self.fit.currentText(),background_fit=self.backfit.currentText(),
+        d.update(name=self.name.text(),author=self.author.text(),mode=list(MODES)[self.mode.currentIndex()],lenticular=self.lenticular.isChecked(),fit=self.fit.currentText(),background_fit=self.backfit.currentText(),
             depth=dict(strength=self.strength.value()/100,convergence=self.convergence.value()/100,bands=self.bands.value()/100,invert=self.invert.isChecked()),
             animation=dict(quality=(1,2,4)[self.quality.currentIndex()]),wood_tint=d.get('wood_colour',d.get('wood_tint') or '#b98a56') if self.wood_mode.currentIndex() else None,wood_intensity=self.intensity.value()/100)
 
@@ -706,6 +713,7 @@ class Creator(QMainWindow):
         for key,default in [('strength',.04),('convergence',.5),('bands',1)]:
             getattr(self,key).set_value(settings.get(key,default)*100)
         self.invert.setChecked(settings.get('invert',False))
+        self.lenticular.setChecked(d.get('lenticular',True))
         self.wood_mode.setCurrentIndex(1 if d.get('wood_tint') else 0)
         self.intensity.set_value(d.get('wood_intensity',1)*100)
         self.placement_open = False
@@ -718,30 +726,37 @@ class Creator(QMainWindow):
 
     def update_mode(self):
         mode = list(MODES)[self.mode.currentIndex()]
-        names = {'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused')}[mode]
+        names = {'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'ghost':('Colour image','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused')}[mode]
+        self.lenticular.setVisible(mode in ('depth','layers'))
+        self.lenticular_help.setVisible(mode in ('depth','layers'))
+        self.lenticular.setEnabled(not self.busy)
         for i,label in enumerate(self.image_labels):
             label.setText(names[i])
             self.image_names[i].setText(Path(self.current()['images'][i]).name if self.current()['images'][i] else '')
             for w in (label,self.image_names[i],self.image_buttons[i]):
                 w.setVisible(i==0 or mode!='gif')
         for w in (self.auto_button,self.auto_help):
-            w.setVisible(mode=='depth')
+            w.setVisible(mode in ('depth','ghost'))
         self.quality.setVisible(mode=='gif')
         self.backfit.setVisible(mode=='layers')
         self.backfit_label.setVisible(mode=='layers')
         for w in (self.strength,self.bands,self.convergence,self.invert):
-            w.setEnabled(mode in ('depth','layers') and not self.busy)
+            w.setEnabled(mode in ('depth','layers','ghost') and not self.busy)
+        self.bands.setEnabled(mode in ('depth','layers') and self.lenticular.isChecked() and not self.busy)
+        self.bands.setVisible(mode in ('depth','layers') and self.lenticular.isChecked())
         self.convergence.title.setText('Background motion' if mode=='layers' else 'Stationary depth')
         self.swap_button.setEnabled(mode=='classic')
-        self.detail_toggle.setEnabled(mode in ('depth','layers'))
-        self.placement_choice.setEnabled(mode!='depth' and mode!='gif')
-        if mode in ('depth','gif'):
+        self.detail_toggle.setEnabled(mode in ('depth','layers') and self.lenticular.isChecked())
+        self.detail_toggle.setVisible(mode in ('depth','layers') and self.lenticular.isChecked())
+        self.placement_choice.setEnabled(mode not in ('depth','ghost','gif'))
+        if mode in ('depth','ghost','gif'):
             self.placement_choice.setCurrentIndex(0)
 
     def changed(self,*args):
         if self.loading or self.busy:
             return
         self.remember()
+        self.update_mode()
         self.schedule()
 
     def mode_changed(self,*args):
@@ -859,25 +874,31 @@ class Creator(QMainWindow):
                                 source = ImageOps.exif_transpose(source).convert('RGBA')
                                 source.thumbnail((1024,4096),Image.Resampling.LANCZOS)
                                 sources.append(source)
-                    images = [image_placement.frame(source,d['background_fit'] if d['mode']=='layers' and i==1 else d['fit'],d['background'],d['placement'][i],alpha=d['mode']=='layers' and i==0,depth=d['mode']=='depth' and i==1) for i,source in enumerate(sources)]
-                    if d['mode']=='depth' and settings.get('invert'):
+                    images = [image_placement.frame(source,d['background_fit'] if d['mode']=='layers' and i==1 else d['fit'],d['background'],d['placement'][i],alpha=d['mode']=='layers' and i==0,depth=d['mode'] in ('depth','ghost') and i==1) for i,source in enumerate(sources)]
+                    if d['mode'] in ('depth','ghost') and settings.get('invert'):
                         images[1] = ImageOps.invert(images[1].convert('RGB'))
                     strength,convergence,bands = (settings.get(k,v) for k,v in [('strength',.04),('convergence',.5),('bands',1)])
                     def progress(message):
                         if revision!=self.revision:
                             raise InterruptedError()
-                    if d['mode']=='depth':
+                    preview_mode=d['mode']
+                    if d['mode']=='ghost' or (d['mode']=='depth' and not d.get('lenticular',True)):
+                        import smooth_effect
+                        atlas=smooth_effect.pack(*images,strength,convergence,d['mode']=='ghost')
+                        thumbs=images
+                        preview_mode='ghost' if d['mode']=='ghost' else 'smooth'
+                    elif d['mode']=='depth':
                         views = preview_depth.views(*images,strength,convergence,progress)
                         atlas = engine.depth_views.pack(views,bands,balanced=True)
                         thumbs = [views[0],views[-1]]
                     elif d['mode']=='layers':
-                        atlas = engine.layer_atlas.pack(*images,strength,convergence,bands,settings.get('invert',False))
+                        atlas = engine.layer_atlas.pack(*images,strength,convergence,bands if d.get('lenticular',True) else 0,settings.get('invert',False))
                         thumbs = images
                     else:
                         atlas = engine.atlas(*images)
                         thumbs = images
                     progress('')
-                    renderer = AtlasPreview(atlas,d['mode'])
+                    renderer = AtlasPreview(atlas,preview_mode)
                     detail = copy.copy(renderer)
                     detail.settings = detail.settings.copy()
                     result = (renderer,detail,None,thumbs,sources)
@@ -1010,7 +1031,7 @@ class Creator(QMainWindow):
         if self.large:
             self.large_board.frame = pixmap
             self.large_board.update()
-        show = mode in ('depth','layers') and self.detail_toggle.isChecked() and self.detail_renderer is not None
+        show = mode in ('depth','layers') and self.current().get('lenticular',True) and self.detail_toggle.isChecked() and self.detail_renderer is not None
         self.update_inspectors()
         detail_key = (id(self.detail_renderer),angle,bands,getattr(self,'lens_region',None))
         if show and detail_key!=self.last_detail_key:
@@ -1096,7 +1117,7 @@ class Creator(QMainWindow):
         self.update_inspectors()
 
     def update_inspectors(self):
-        lens = self.current()['mode'] in ('depth','layers') and self.detail_toggle.isChecked()
+        lens = self.current()['mode'] in ('depth','layers') and self.current().get('lenticular',True) and self.detail_toggle.isChecked()
         self.detail_box.setVisible(lens)
         self.placement.setVisible(self.placement_open)
 
@@ -1116,7 +1137,7 @@ class Creator(QMainWindow):
         setting = {key:control.value()/100 for key,control in self.positions.items()}
         d = self.current()
         d['placement'][self.placement_index] = setting
-        if d['mode']=='depth':
+        if d['mode'] in ('depth','ghost'):
             d['placement'][1-self.placement_index] = copy.deepcopy(setting)
         self.schedule()
         self.live_placement = self.clip is not None or self.placement_source_key==tuple(d['images'])
