@@ -8,11 +8,23 @@ underside, centred without stretching. Placement controls adjust its position an
 scale; the preview plays while you edit. Export animated and lenticular decks in
 one pack or as separate compatible mods.
 
-This beta supports up to 128 frames and 40.95 seconds, with timings rounded to
-10 milliseconds. Frames share one game texture and may be reduced in resolution.
-Long or full-board clips can look soft. Older lenticular exports must be re-exported
+This beta supports up to 512 frames and 40.95 seconds. Clips up to 4.095 seconds
+use millisecond timing; longer clips use 10-millisecond timing. The source frame
+durations are preserved within that precision; a higher quality setting does not
+invent extra frames.
+
+Choose Standard, High or Ultra for increasing frame detail and file size. Frames
+share one game texture, so longer clips still have less room per frame. GIF exports
+include a shared compositor fix to preserve atlas detail, using native compression
+without extra compositor mip levels to reduce texture memory. This changes the
+shared board compositor while the mod is enabled; memory use still depends on the
+game and enabled mods. Whole-game memory savings have not been benchmarked.
+
+Older lenticular exports must be re-exported
 with this version, or have their shared renderer upgraded, before combining them
 with animated mods. Do not enable an old pack and its replacement together.
+
+Dark artwork in gameplay and sticker corruption remain known issues in this beta.
 
 ## Download and run
 

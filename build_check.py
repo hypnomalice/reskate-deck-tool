@@ -26,7 +26,7 @@ def check(folder):
         gif = folder/'animation.gif'
         Image.new('RGB',(80,40),'red').save(gif,save_all=True,
             append_images=[Image.new('RGB',(80,40),'blue')],duration=[80,120],loop=0)
-        projects.append(dict(name='Studio Animation Test',mode='gif',images=[str(gif.resolve()),None]))
+        projects.append(dict(name='Studio Animation Test',mode='gif',images=[str(gif.resolve()),None],animation=dict(quality=2)))
         records = []
         original = engine.deck_archive.resource
         def record(template,index,name,raw,cas,**kwargs):
@@ -36,13 +36,28 @@ def check(folder):
         output = engine.export_pack(projects,folder/'Studio Testing Pack.fbmod')
         engine.deck_archive.resource = original
         header,blobs = engine.split_mod(output.read_bytes())
-        assert len(blobs) == 55
+        assert len(blobs) == 57
+        assert b'items/cust_board_stickers/skateboardstickercompositetextureset\0' in header
+        assert b'characters/customization/board/loaders/cas_skateboard_sticker_compositor_prefab\0' in header
+        compositor=Ebx(next(raw for name,raw,rid in records if name=='items/cust_board_stickers/skateboardstickercompositetextureset'))
+        import struct
+        assert struct.unpack_from('<4I',compositor.data,72)==(2048,)*4
+        assert struct.unpack_from('<4I',compositor.data,56)==(16384,)*4
+        prefab=Ebx(next(raw for name,raw,rid in records if name=='characters/customization/board/loaders/cas_skateboard_sticker_compositor_prefab'))
+        t=next(t for t in prefab.types if t['name']=='TextureCompositorEntityData')
+        off=next(off for off in prefab.inst if (prefab.tg[struct.unpack_from('<H',prefab.data,off)[0]],prefab.ts[struct.unpack_from('<H',prefab.data,off)[0]])==t['id'])
+        for name in ('ForceUncompressed','GenerateMipMaps'):
+            f=next(f for f in prefab.fields[t['first']:t['first']+t['count']] if f['name']==name)
+            assert prefab.data[off+f['off']]==0
         assert b'reskate-cosmetic-shader:v1' not in header
         assert b'reskate-cosmetic-shader-lookup:v1' not in header
         assert header.count(b'reskate-cosmetic-dependency:v1') == 5
         textures = [(name,rid) for name,raw,rid in records if rid is not None and name.startswith(('thumbnail/tool/','characters/customization/reskate/board_bottomart/'))]
         assert len(textures) == 9 and len(set(rid for _,rid in textures)) == 9
         assert all(rid&3 != 2 for _,rid in textures)
+        import struct
+        headers=[raw for name,raw,rid in records if len(raw)==180 and raw[:8]==bytes(8)]
+        assert any(struct.unpack_from('<HH',raw,22)==(1024,8192) and raw[30:34]==bytes((1,0,0,1)) and struct.unpack_from('<H',raw,20)[0]&8 for raw in headers)
         for name,rid in textures:
             raw = next(raw for other,raw,resource_id in records if other==name and resource_id is None and raw.startswith(b'RIFF'))
             ebx = Ebx(raw)

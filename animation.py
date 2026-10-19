@@ -91,7 +91,7 @@ class Animation:
         }
 
 
-def load(path, *, max_frames=600, max_pixels=100_000_000):
+def load(path, *, max_frames=512, max_pixels=256_000_000):
     frames, ends, elapsed, pixels = [], [], 0, 0
     with Image.open(Path(path)) as image:
         if not getattr(image, 'is_animated', False):

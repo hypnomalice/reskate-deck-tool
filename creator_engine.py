@@ -52,23 +52,36 @@ def encode_thumbnail(im):
     im=im.convert('RGBA')
     return tc.compress_blocks_bc7(tc.RGBASurface(im.tobytes(),im.width,im.height,im.width*4),tc.BC7EncSettings.from_profile('alpha_basic'))
 
-def encode(im,progress=lambda message:None):
+def encode(im,progress=lambda message:None,*,profile='slow',mipmaps=True):
     im=im.convert('RGBA');parts=[]
-    settings=tc.BC7EncSettings.from_profile('slow')
-    for level in range(12):
-        progress(f'Preparing texture detail {level+1} of 12…')
-        w=max(1,512>>level);h=max(1,4096>>level)
+    settings=tc.BC7EncSettings.from_profile(profile)
+    width,height=im.size
+    if (width,height) not in [(512,4096),(1024,8192),(2048,16384)]:
+        raise ValueError('Unsupported deck atlas dimensions.')
+    levels=max(width,height).bit_length()-1 if mipmaps else 1
+    total=sum(max(1,((width>>n)+3)//4)*max(1,((height>>n)+3)//4)*16 for n in range(levels))
+    completed=0
+    for level in range(levels):
+        progress(f'Preparing texture detail {level+1} of {levels}…')
+        w=max(1,width>>level);h=max(1,height>>level)
         mip=im.resize((w,h),Image.Resampling.LANCZOS) if level else im
         if w<4 or h<4:
             pad=Image.new('RGBA',(max(4,w),max(4,h)))
             for y in range(pad.height):
                 for x in range(pad.width):pad.putpixel((x,y),mip.getpixel((min(x,w-1),min(y,h-1))))
             mip=pad
-        data=tc.compress_blocks_bc7(tc.RGBASurface(mip.tobytes(),mip.width,mip.height,mip.width*4),settings)
+        strips=[]
+        for y in range(0,mip.height,256):
+            strip=mip.crop((0,y,mip.width,min(y+256,mip.height)))
+            compressed=tc.compress_blocks_bc7(tc.RGBASurface(strip.tobytes(),strip.width,strip.height,strip.width*4),settings)
+            strips.append(compressed)
+            completed+=len(compressed)
+            progress(f'Compressing texture: {completed/total:.0%} (detail {level+1}/{levels})')
+        data=b''.join(strips)
         assert len(data)==max(1,(w+3)//4)*max(1,(h+3)//4)*16
         parts.append(data)
     result=b''.join(parts)
-    assert len(result)==2796288
+    assert len(result)==sum(max(1,((width>>n)+3)//4)*max(1,((height>>n)+3)//4)*16 for n in range(levels))
     return result
 
 def split_mod(b):
@@ -171,8 +184,8 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         progress(f'Deck {number} of {len(projects)}: {name}')
         if mode == 'gif':
             clip=animation.load(a)
-            packed,metadata=animation_texture.atlas(clip,background=background,placement=(project.get('placement') or [{}])[0])
-            texture=encode(packed,progress)
+            packed,metadata=animation_texture.atlas(clip,background=background,placement=(project.get('placement') or [{}])[0],quality=project.get('animation',{}).get('quality',1))
+            texture=encode(packed,progress,profile='fast',mipmaps=False)
             first=animation_texture.preview_frame(clip,0,background,(project.get('placement') or [{}])[0])
             thumb=thumbnail(first,first,custom,background=background,label='ANIMATED')
         elif mode in ['depth','layers']:
@@ -194,10 +207,10 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         else:
             texture=encode(atlas(a,b,fit,background),progress)
             thumb=thumbnail(a,b,custom,fit,background)
-        decks.append(dict(name=name,mode='depth' if mode=='layers' else 'classic' if mode=='gif' else mode,texture=texture,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
+        decks.append(dict(name=name,mode='depth' if mode=='layers' else 'classic' if mode=='gif' else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' else None,resident=mode=='gif',thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
     result=deck_archive.build(decks,raw_cas,title,author.strip(),independent_shader=True)
     check_head,check_blobs=split_mod(result)
-    assert len(check_blobs)==14*len(projects)+13
+    assert len(check_blobs)==14*len(projects)+13+2*int(any(p.get('mode')=='gif' for p in projects))
     dest.parent.mkdir(parents=True,exist_ok=True)
     temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
     progress('Export complete.');return dest

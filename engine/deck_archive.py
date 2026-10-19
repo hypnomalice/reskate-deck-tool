@@ -49,7 +49,7 @@ def descriptor_parts(d):
     end=d.index(0,5);sha=end+1;tagend=d.index(0,sha+33)
     q=tagend+1;tail=q+4+4*u32(d,q)
     return sha,tagend,tail
-def resource(template,index,name,raw,cas,tag=None,rid=None,meta=None):
+def resource(template,index,name,raw,cas,tag=None,rid=None,meta=None,chunk_sizes=None,first_mip=None):
     d=bytearray.fromhex(template['descriptor']);oldend=d.index(0,5)
     d=d[:5]+name.encode()+b'\0'+d[oldend+1:]
     struct.pack_into('<I',d,1,index)
@@ -62,6 +62,11 @@ def resource(template,index,name,raw,cas,tag=None,rid=None,meta=None):
     if meta is not None:
         assert u32(d,tail+12)==len(meta)
         d[tail+16:tail+16+len(meta)]=meta
+    if chunk_sizes is not None:
+        if first_mip is not None:
+            struct.pack_into('<I',d,tail+20,first_mip)
+        first=u32(d,tail+20)
+        struct.pack_into('<II',d,tail+8,sum(chunk_sizes[:first]),sum(chunk_sizes[first:]))
     return bytes(d),encoded
 
 def collection(raw,items):
@@ -133,6 +138,11 @@ def build(decks,cas,title,author,*,independent_shader=False):
     def add(i,name,raw,**kwargs):
         d,b=resource(ts[i],len(blobs),name,raw,cas,**kwargs);descriptors.append(d);blobs.append(b)
     for number,deck in enumerate(decks):
+        texture_size=deck.get('texture_size',(512,4096))
+        levels=deck.get('texture_mips') or max(texture_size).bit_length()-1
+        sizes=[max(1,((texture_size[0]>>n)+3)//4)*max(1,((texture_size[1]>>n)+3)//4)*16 for n in range(levels)]
+        if len(deck['texture'])!=sum(sizes):
+            raise ValueError('Deck texture size does not match its mip data.')
         identity=uuid.uuid5(uuid.NAMESPACE_URL,'reskate/lenticular/deck/'+deck['name'].casefold())
         token=identity.hex;gmap={};names={};ridmap={};names_by_index={}
         names_by_index[0]=f'characters/customization/reskate/board_bottomart/lenticular_{token}_ap'
@@ -175,6 +185,21 @@ def build(decks,cas,title,author,*,independent_shader=False):
                 oldchunk=uuid.UUID(ts[chunkindex]['name']).bytes_le
                 assert raw.count(oldchunk)==1
                 raw=bytes(raw).replace(oldchunk,uuid.UUID(names_by_index[chunkindex]).bytes_le)
+                if i==13 and (tuple(texture_size)!=(512,4096) or deck.get('resident')):
+                    raw=bytearray(raw)
+                    struct.pack_into('<HH',raw,22,*texture_size)
+                    raw[30]=levels
+                    struct.pack_into('<15I',raw,56,*(sizes+[0]*(15-levels)))
+                    struct.pack_into('<I',raw,116,sum(sizes))
+                    raw=bytes(raw)
+                if i==13 and deck.get('resident'):
+                    raw=bytearray(raw)
+                    raw[31]=0
+                    raw[32]=0
+                    raw[33]=levels
+                    struct.pack_into('<I',raw,36,0)
+                    struct.pack_into('<H',raw,20,struct.unpack_from('<H',raw,20)[0]|8)
+                    raw=bytes(raw)
                 _,_,tail=descriptor_parts(bytearray.fromhex(ts[i]['descriptor']));rid=ridmap[u64(bytes.fromhex(ts[i]['descriptor']),tail+4)]
             elif i==3:raw=deck['thumb_small']
             elif i==7:raw=deck['thumb_large']
@@ -188,7 +213,7 @@ def build(decks,cas,title,author,*,independent_shader=False):
             if i==11:
                 # These programs are compiled already; there is no board mesh to rebuild.
                 tag='reskate-cosmetic-dependency:v1'
-            add(i,names_by_index[i],raw,tag=tag,rid=rid)
+            add(i,names_by_index[i],raw,tag=tag,rid=rid,chunk_sizes=sizes if i==14 else None,first_mip=0 if i==14 and deck.get('resident') else None)
         presets.append(names_by_index[0])
     for i in range(len(ts)):
         if i in PER_DECK:continue
@@ -208,6 +233,38 @@ def build(decks,cas,title,author,*,independent_shader=False):
                 raw=b''.join(struct.pack('<QQ',k,v) for k,v in sorted(rows.items()))
         tag='reskate-cosmetic-dependency:v1' if i in [15,16] else None
         add(i,ts[i]['name'],raw,meta=meta,tag=tag)
+    if any(deck.get('resident') for deck in decks):
+        raw=bytearray((ROOT.parent/'assets/board-compositor.ebx').read_bytes())
+        compositor=Ebx(bytes(raw))
+        # The stock sticker pass shrinks the whole atlas to 512x2048.
+        assert struct.unpack_from('<4I',compositor.data,72)==(128,256,512,512)
+        assert struct.unpack_from('<4I',compositor.data,56)==(512,1024,2048,2048)
+        struct.pack_into('<4I',raw,compositor.start+72,2048,2048,2048,2048)
+        struct.pack_into('<4I',raw,compositor.start+56,16384,16384,16384,16384)
+        overrides=[('items/cust_board_stickers/skateboardstickercompositetextureset',bytes(raw))]
+        raw=bytearray((ROOT.parent/'assets/board-compositor-prefab.ebx').read_bytes())
+        prefab=Ebx(bytes(raw))
+        compositor_type=next(t for t in prefab.types if t['name']=='TextureCompositorEntityData')
+        instances=[off for off in prefab.inst if (prefab.tg[struct.unpack_from('<H',prefab.data,off)[0]],prefab.ts[struct.unpack_from('<H',prefab.data,off)[0]])==compositor_type['id']]
+        assert len(instances)==1
+        fields=prefab.fields[compositor_type['first']:compositor_type['first']+compositor_type['count']]
+        for name in ('ForceUncompressed','GenerateMipMaps'):
+            field=next(f for f in fields if f['name']==name)
+            at=prefab.start+instances[0]+field['off']
+            assert raw[at]==1
+            raw[at]=0
+        overrides.append(('characters/customization/board/loaders/cas_skateboard_sticker_compositor_prefab',bytes(raw)))
+        levels=('bam_levelroot/bam_levelroot','dingolevel_ftue_island/dingolevel_ftue_island',
+                'dingolevel_isle_of_grom/dingolevel_isle_of_grom','dingolevel_mpr/dingolevel_mpr',
+                'dingolevel_sdm/dingolevel_sdm_int_001/dingolevel_sdm_int_001',
+                'dingolevel_sdm/dingolevel_sdm_int_002/dingolevel_sdm_int_002')
+        bundles=[hash_key('win32/levels/game/'+level) for level in levels]
+        for name,raw in overrides:
+            descriptor,encoded=resource(ts[0],len(blobs),name,raw,cas,tag='')
+            descriptor=bytearray(descriptor)
+            _,tagend,tail=descriptor_parts(descriptor)
+            descriptor=descriptor[:tagend+1]+struct.pack('<I',len(bundles))+b''.join(struct.pack('<I',b) for b in bundles)+descriptor[tail:]
+            descriptors.append(descriptor);blobs.append(encoded)
     prefix=bytearray.fromhex(manifest['prefix']);countat=prefix.index(b'\0\xff\xff\xff\xffIcon')-4
     struct.pack_into('<I',prefix,countat,u32(prefix,countat)+len(blobs)-len(ts))
     profile_end=25+prefix[24];at=profile_end+4;end=prefix.index(0,prefix.index(0,at)+1)

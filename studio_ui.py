@@ -89,6 +89,7 @@ class Creator:
         self.deck_name, self.author = tk.StringVar(value='My Lenticular Deck'), tk.StringVar()
         self.mode, self.fit = tk.StringVar(value=MODES['classic']), tk.StringVar(value='Stretch')
         self.background_fit = tk.StringVar(value='Crop to fill')
+        self.gif_quality = tk.StringVar(value='High (1024 × 8192)')
         self.strength, self.convergence, self.bands = tk.DoubleVar(value=.04), tk.DoubleVar(value=.5), tk.DoubleVar(value=1)
         self.invert, self.angle = tk.BooleanVar(value=False), tk.DoubleVar(value=0)
         self.wood_mode = tk.StringVar(value='Original wood')
@@ -188,11 +189,17 @@ class Creator:
         row = ttk.Frame(right)
         row.pack(fill='x', pady=(12, 5))
         ttk.Label(row, text='Effect').pack(side='left')
-        self.help(row, 'Lenticular: two images flip with viewing angle.\n\n3D (depth map): a colour image and matching grayscale depth map create depth. White is near; black is far.\n\n3D (foreground/background): a transparent foreground moves over a complete background.\n\nAnimated GIF: a GIF, animated PNG or WebP loops on the underside, centred without stretching. Up to 128 frames and 40.95 seconds. Frames may be reduced in resolution to fit. Older lenticular mods need a renderer compatibility update.')
+        self.help(row, 'Lenticular: two images flip with viewing angle.\n\n3D (depth map): a colour image and matching grayscale depth map create depth. White is near; black is far.\n\n3D (foreground/background): a transparent foreground moves over a complete background.\n\nAnimated GIF: a GIF, animated PNG or WebP loops on the underside, centred without stretching. Up to 512 frames and 40.95 seconds. Frames may be reduced in resolution to fit. Older lenticular mods need a renderer compatibility update.')
         modes = ttk.Combobox(right, textvariable=self.mode, values=list(MODES.values()), state='readonly', width=29)
         modes.pack(fill='x')
         modes.bind('<<ComboboxSelected>>', self.change_mode)
         self.depth_anchor = modes
+        self.gif_controls = ttk.Frame(right)
+        quality_row = ttk.Frame(self.gif_controls)
+        quality_row.pack(fill='x',pady=(8,4))
+        ttk.Label(quality_row,text='Animation quality').pack(side='left')
+        self.help(quality_row,'Larger atlases retain more detail per frame but use more memory and take longer to export. High uses about 8 MB of compressed texture data per deck; Ultra about 32 MB. Animation data stays at full resolution so lower mip levels cannot corrupt its timing. The preview shows the source, not the final texture compression. Up to 512 source frames are retained; extra frames are not invented.')
+        ttk.Combobox(self.gif_controls,textvariable=self.gif_quality,values=['Standard (512 × 4096)','High (1024 × 8192)','Ultra (2048 × 16384)'],state='readonly').pack(fill='x')
         self.depth_controls = ttk.Frame(right)
         self.strength_label, self.convergence_label, self.bands_label = [tk.StringVar() for _ in range(3)]
         self.slider(self.depth_controls, self.strength_label, self.strength, self.schedule_depth,
@@ -309,11 +316,18 @@ class Creator:
 
     def animate(self):
         self.animation_job = None
+        if self.busy:
+            self.animation_job=self.root.after(150,self.animate)
+            return
         if self.is_gif() and self.animation_clip:
             self.render()
-            self.animation_job = self.root.after(40, self.animate)
+            self.animation_job = self.root.after(15, self.animate)
 
     def update_mode(self):
+        if self.is_gif():
+            self.gif_controls.pack(fill='x',after=self.depth_anchor)
+        else:
+            self.gif_controls.pack_forget()
         self.fit_box.configure(state='disabled' if self.is_gif() else 'readonly')
         self.angle_control.configure(state='disabled' if self.is_gif() else 'normal')
         if self.animation_job is not None:
@@ -322,7 +336,7 @@ class Creator:
         if self.is_gif():
             self.image_frames[1].pack_forget()
             self.swap_button.pack_forget()
-            self.animation_job = self.root.after(40, self.animate)
+            self.animation_job = self.root.after(15, self.animate)
         else:
             self.image_frames[1].pack(fill="x", pady=(0,10), after=self.image_frames[0])
             self.swap_button.pack(fill="x", after=self.image_frames[1])
@@ -355,6 +369,7 @@ class Creator:
     def project_data(self):
         data = dict(version=4, mode='gif' if self.is_gif() else 'layers' if self.is_layers() else 'depth' if self.is_depth() else 'classic', name=self.deck_name.get(), author=self.author.get(), images=list(self.paths), fit=self.fit.get(), background=self.background, thumbnail=self.thumbnail_path, depth=dict(strength=self.strength.get(), convergence=self.convergence.get(), invert=self.invert.get(), bands=self.bands.get()))
         data['placement'] = copy.deepcopy(self.placements)
+        data['animation'] = dict(quality={'Standard (512 × 4096)':1,'High (1024 × 8192)':2,'Ultra (2048 × 16384)':4}[self.gif_quality.get()])
         data['background_fit'] = self.background_fit.get()
         data['wood_tint'] = self.wood_colour if self.wood_mode.get() != 'Original wood' else None
         return data
@@ -435,6 +450,7 @@ class Creator:
             self.author.set(data.get('author', ''))
             self.fit.set(data.get('fit', 'Stretch'))
             self.background_fit.set(data.get('background_fit','Crop to fill'))
+            self.gif_quality.set({1:'Standard (512 × 4096)',2:'High (1024 × 8192)',4:'Ultra (2048 × 16384)'}.get(data.get('animation',{}).get('quality',2),'High (1024 × 8192)'))
             self.placement_index = None
             self.placement_controls.pack_forget()
             self.background = data.get('background', '#ffffff')
@@ -500,7 +516,7 @@ class Creator:
         self.render()
         self.render_thumbnail()
         if self.is_gif() and self.animation_clip and self.animation_job is None:
-            self.animation_job = self.root.after(40, self.animate)
+            self.animation_job = self.root.after(15, self.animate)
 
     def swap(self):
         if self.busy:

@@ -7,6 +7,8 @@ third-party dependencies, the supplied character icon, or game-derived template 
   compiled programs needed to construct the mods. Game-derived material remains subject
   to its original rights; no ownership or MIT licence to game assets is claimed.
 - `assets/sofi-deck-tool.*` is the user-supplied character icon, not MIT-licensed artwork.
+- `assets/board-compositor*.ebx` contains game-derived compositor templates and is
+  subject to the same original rights as the engine templates.
 - ISPCTextureCompressor Python bindings: Rudolf Kolbe, MIT; native compressor components
   retain their upstream licences.
 - Python, Tcl/Tk, Pillow, NumPy, ONNX Runtime, FlatBuffers and Protobuf retain their own
