@@ -1,4 +1,4 @@
-# ReSkate Deck Tool - Beta
+# ReSkate Deck Tool 1.1.0
 
 Make custom lenticular skateboard graphics for ReSkate. Export one deck or a workspace
 of decks as an `.fbmod`, with custom names and thumbnails.
@@ -14,27 +14,25 @@ durations are preserved within that precision; a higher quality setting does not
 invent extra frames.
 
 Choose Standard, High or Ultra for increasing frame detail and file size. Frames
-share one game texture, so longer clips still have less room per frame. GIF exports
-include a shared compositor fix to preserve atlas detail, using native compression
-without extra compositor mip levels to reduce texture memory. This changes the
-shared board compositor while the mod is enabled; memory use still depends on the
-game and enabled mods. Whole-game memory savings have not been benchmarked.
+share one game texture, so longer clips still have less room per frame.
+The shared core preserves native compositor settings to avoid the clothing blur
+observed with the previous resolution override.
 
-Older lenticular exports must be re-exported
-with this version, or have their shared renderer upgraded, before combining them
-with animated mods. Do not enable an old pack and its replacement together.
+## Shared core and existing packs
 
-## Update existing packs
+New exports save deck content plus `ReSkate Effects Runtime.fbmod`. Import the
+runtime once, or install Sofi’s Deck Effect Core 1.0.1 through Thunderstore.
+Keep one updated core enabled alongside your content packs.
 
-Choose **File > Update existing FBMODs...**, select one or more older Deck Tool
-packs, then choose a folder for the updated copies. No project or source images
-are needed. Originals remain unchanged; existing output files are never replaced.
-The updater recognises published Deck Tool renderers and skips unsupported files
-with an explanation.
+For legacy standalone packs, use **File > Migrate older packs (once)…** and import
+the new content copies in place of the originals. Original files stay unchanged.
+Once migrated, existing content does not need re-exporting for this core update.
+**File > Effects runtime setup…** saves the bundled core for import into Studio.
 
-Import the new `- Compatible.fbmod` files in shader-capable ReSkate Studio and
-replace their older versions in the enabled mod list. Update every older effect
-pack you use together. New exports already include the sticker fix.
+### Legacy repair history
+
+The following notes apply to earlier standalone exports and their repair tools.
+Use the migration flow above in version 1.1.0.
 
 ### Files exported or updated with beta.1 or beta.2
 
@@ -65,16 +63,18 @@ This is an effect preview, not a copy of the game's renderer: lighting, reflecti
 texture compression, camera geometry and the truck guides remain approximate.
 
 On startup the app checks this repository's GitHub releases in the background.
-An **Update available** button appears only for a newer release. It opens that release
-on GitHub; it does not replace the executable or install anything automatically.
-Beta builds also check beta releases. Offline and rate-limited checks stay quiet.
+An **Update available** button appears for a newer release. Packaged 1.1.0 builds
+download and verify the EXE, preserve the previous executable and restart into
+the update. Source runs and unverifiable assets open the release page instead.
+Version 1.0.1 needs one manual upgrade to gain this updater.
+Offline and rate-limited checks stay quiet.
 
 Stickers now composite separately from effect artwork. Dark artwork in gameplay remains a known issue.
 
 ## Download and run
 
 Download the Windows ZIP from [Releases](https://github.com/hypnomalice/reskate-deck-tool/releases),
-extract it, and open **ReSkate Deck Tool - Beta.exe**. Python and the required libraries
+extract it, and open **ReSkate Deck Tool.exe**. Python and the required libraries
 are bundled. Windows is the tested platform; a clean-machine test is still pending.
 
 **You need a ReSkate Studio build with shader support to import and deploy the mods.**

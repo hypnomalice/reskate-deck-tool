@@ -9,7 +9,7 @@ The source code is here, we had to use ai assistance to finally get the damn thi
 
 
 
-### Shared effects runtime — 1.1 test build
+### Version 1.1.0 — shared effects runtime
 
 New exports contain artwork and settings, with `ReSkate Effects Runtime.fbmod`
 saved beside them. Import the runtime once in ReSkate Studio, then import your
@@ -92,3 +92,16 @@ replacing the source file refreshes the cache. No game shaders or exported deck
 formats changed, and existing FBMODs do not need updating for 1.0.1.
 Shadows and banding in gameplay remain known issues. Ghost Rare masks are not
 included in this update.
+
+
+### Final compatibility fixes in 1.1.0
+
+The tool exports deck content separately from the shared effects core. Its bundled
+runtime includes the tested custom-map artwork fix and removes the unwanted tiled
+donor holo from tool-made decks while preserving Ghost Rare’s intended finish.
+Native compositor settings preserve sharpness on the tested animated crop top.
+Existing runtime-based deck packs do not need re-exporting; update the core once.
+Use Sofi’s Deck Effect Core 1.0.1 when installing through Thunderstore.
+
+Includes the verified automatic updater and one-time migration for legacy packs.
+Shadows and gameplay banding remain ongoing issues and are planned for future fixes.

@@ -121,6 +121,23 @@ def check(folder):
         assert global_bundles(new_archive.descriptors[new_archive.find(1,'characters/customization/reskate/board_bottomart/lenticular_black_rgb')])==global_bundles(lua)
         report['new_modes_output']=str(new_output)
         report['new_modes_resources']=len(new_archive.blobs)
+        from effects_runtime import write_runtime_export, COMPOSITOR
+        runtime_folder = folder / 'shared-runtime'
+        runtime_folder.mkdir(exist_ok=True)
+        content_path = runtime_folder / 'Content.fbmod'
+        write_runtime_export(new_output.read_bytes(), content_path, overwrite=True)
+        core = Archive((runtime_folder / 'ReSkate Effects Runtime.fbmod').read_bytes())
+        core_keys = {core.key(i) for i in range(len(core.blobs))}
+        assert len(core_keys) == 12 and not core_keys & COMPOSITOR
+        assert core.find(2, 'shaders/bytecode/c6d7fd6d-42ea-3ad2-2d72-1e04a029fc90') is not None
+        core_lua = unpack(core.blobs[core.find(2, 'characters/lua/luaskateboardcompositor')])
+        assert b'deck:addBundleRef(emptyTexture)' in core_lua
+        content = Archive(content_path.read_bytes())
+        assert not any(content.key(i)[1].startswith('shaders/bytecode/') for i in range(len(content.blobs)))
+        report['shared_runtime'] = dict(resources=12, native_compositor=True,
+                                       owned_background=True, scoped_foil=True,
+                                       output=str(runtime_folder))
+
     except Exception:
         import traceback
         report = dict(ok=False,error=traceback.format_exc())
