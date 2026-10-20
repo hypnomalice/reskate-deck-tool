@@ -22,10 +22,24 @@ COMPOSITOR = {
 }
 
 
+def _runtime_updates():
+    assets = deck_archive.ROOT.parent / 'assets/effects-runtime'
+    records = json.loads((assets / 'manifest.json').read_text())
+    updates = []
+    for record in records:
+        payload = (assets / record['file']).read_bytes()
+        if hashlib.sha256(payload).hexdigest() != record['sha256']:
+            raise UnsupportedMod('A runtime resource failed its integrity check.')
+        updates.append((record, payload))
+    return updates
+
+
 def shared_keys():
     assets = deck_archive.ROOT.parent / 'assets/sticker-compat'
     records = json.loads((assets / 'manifest.json').read_text())
-    return {(r['kind'], r['name']) for r in records} | COMPOSITOR
+    return ({(r['kind'], r['name']) for r in records} | COMPOSITOR
+            | {(r['kind'], r['name']) for r, _ in _runtime_updates()
+               if '_bundlereftable' not in r['name']})
 
 
 def _subset(archive, indices, title=None):
@@ -51,7 +65,20 @@ def build_runtime():
     ], pack, RUNTIME_NAME, 'IdolRiot', independent_shader=True)
     normalized, _ = compatible(seed)
     archive = Archive(normalized)
-    shared = shared_keys()
+    shared = (shared_keys() - COMPOSITOR) | {
+        (r['kind'], r['name']) for r, _ in _runtime_updates()}
+    updates = _runtime_updates()
+    for record, payload in updates:
+        key = (record['kind'], record['name'])
+        index = archive.find(*key)
+        if index is None:
+            index = len(archive.blobs)
+            archive.blobs.append(payload)
+            archive.descriptors.append(bytearray())
+        archive.blobs[index] = payload
+        descriptor = bytearray.fromhex(record['descriptor'])
+        struct.pack_into('<I', descriptor, 1, index)
+        archive.descriptors[index] = descriptor
     indices = [i for i in range(len(archive.blobs)) if archive.key(i) in shared]
     if {archive.key(i) for i in indices} != shared:
         raise UnsupportedMod('The runtime build is missing a required resource.')
@@ -66,18 +93,21 @@ def split_pack(data):
     runtime_indices = [i for i in range(len(archive.blobs)) if archive.key(i) in shared]
     content_indices = [i for i in range(len(archive.blobs)) if archive.key(i) not in shared]
     # All common shader, empty-texture and Lua resources must be supplied once.
-    mandatory = shared - COMPOSITOR
+    legacy = json.loads((deck_archive.ROOT.parent / 'assets/sticker-compat/manifest.json').read_text())
+    mandatory = {(r['kind'], r['name']) for r in legacy}
     present = {archive.key(i) for i in runtime_indices}
     if not mandatory <= present:
         raise UnsupportedMod('The pack is missing a runtime dependency.')
     content = _subset(archive, content_indices)
-    # A classic-only input lacks high-resolution compositor settings; the
-    # runtime must still support GIF and smooth content installed later.
+    # Keep compositor resolution native; only the runtime owns background
+    # residency and tagged deck-foil suppression. Existing content stays valid.
     runtime = build_runtime()
+    runtime_archive = Archive(runtime)
     contract = {
         'runtime': RUNTIME_NAME, 'abi': ABI, 'decks': count,
         'content_sha256': hashlib.sha256(content).hexdigest(),
-        'runtime_resources': [dict(kind=k, name=n) for k, n in sorted(shared)],
+        'runtime_resources': [dict(kind=k, name=n) for k, n in sorted(
+            runtime_archive.key(i) for i in range(len(runtime_archive.blobs)))],
         'shared_program_ids': True,
         'third_party_compatibility_verified': False,
     }

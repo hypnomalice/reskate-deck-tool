@@ -1,7 +1,8 @@
 # Shared effects runtime (experimental)
 
-The runtime owns six effect programs, the empty native graphic texture, the
-scoped sticker-compositor Lua, and the compositor resolution settings. Content
+The runtime owns six effect programs, a scoped donor-foil program, the empty
+native graphic texture, its bundle lookup, and scoped sticker-compositor Lua.
+It preserves native compositor resolution settings. Content
 packs retain artwork, masks, thumbnails, items, private material recipes and
 their additive shader lookup rows. Content packs must not carry a renderer.
 
@@ -38,3 +39,20 @@ beside the content with a dependency contract. Automatic launcher installation a
 missing-runtime enforcement are not implemented. Users import the runtime once
 through Studio, then update that one installed mod when effects change.
 Do not publish this candidate as an automatic universal conflict resolver.
+
+## Core update: custom maps and clothing quality
+
+The core now loads the empty sticker background asynchronously and retains its
+bundle for the equipped deck. This preserves artwork across custom-map changes
+without the startup and replay crashes seen with global resource registration.
+A seventh shader override suppresses the donor foil pass only when its texture
+contains the existing Deck Tool atlas signature. Ghost Rare keeps its own holo.
+
+The core no longer overrides compositor resolution or its loader prefab. In the
+supplied crop-top test, removing those two overrides restored clothing sharpness;
+the six main shaders were ruled out as a necessary trigger in a separate test.
+This does not establish universal compatibility with other shader mods.
+
+ABI remains 1. Existing runtime-based deck packs do not need re-exporting. Update
+the core once. Content keeps its material lookup rows; the core adds the empty
+background lookup. Gameplay shadow and banding issues remain open.

@@ -28,10 +28,13 @@ class RuntimeTests(unittest.TestCase):
         content, runtime, contract = split_pack(self.original)
         normalized, _ = compatible(self.original)
         left, right = resources(content), resources(runtime)
-        self.assertFalse(left.keys() & right.keys())
-        self.assertEqual(left | right, resources(normalized))
+        overlap = left.keys() & right.keys()
+        self.assertTrue(all('_bundlereftable' in name for _, name in overlap))
+        self.assertEqual(left, {key: value for key, value in resources(normalized).items()
+                                if key not in shared_keys()})
+        self.assertEqual(right, resources(build_runtime()))
         self.assertFalse(left.keys() & shared_keys())
-        self.assertTrue(all(key in shared_keys() for key in right))
+        self.assertTrue(all(key in shared_keys() or '_bundlereftable' in key[1] for key in right))
         self.assertEqual(contract['abi'], ABI)
         self.assertFalse(contract['third_party_compatibility_verified'])
 
@@ -40,6 +43,21 @@ class RuntimeTests(unittest.TestCase):
         for _, name in resources(runtime):
             self.assertFalse(name.startswith('items/board_bottomart/'))
             self.assertFalse(name.startswith('characters/maincharacters/reskate/shaders/'))
+
+    def test_runtime_preserves_native_compositor_and_owns_background(self):
+        from fbmod_compat import unpack
+        from effects_runtime import COMPOSITOR, _runtime_updates
+        archive = Archive(build_runtime())
+        keys = {archive.key(i) for i in range(len(archive.blobs))}
+        self.assertFalse(keys & COMPOSITOR)
+        self.assertEqual(len(keys), 12)
+        for record, payload in _runtime_updates():
+            i = archive.find(record['kind'], record['name'])
+            self.assertIsNotNone(i)
+            self.assertEqual(archive.blobs[i], payload)
+        lua = unpack(archive.blobs[archive.find(2, 'characters/lua/luaskateboardcompositor')])
+        self.assertIn(b'deck:addBundleRef(emptyTexture)', lua)
+        self.assertNotIn(b'bindings.DeckToolEmpty', lua)
 
     def test_migration_keeps_original_and_rejects_overwrite(self):
         with tempfile.TemporaryDirectory() as folder:
