@@ -329,7 +329,7 @@ class Creator(QMainWindow):
         self.status.setText('Preparing export…')
         def run():
             try:
-                result = engine.export_pack(projects,path,lambda message:self.events.put(('status',0,message)),title=title,author=projects[0].get('author',''))
+                result = engine.export_pack(projects,path,lambda message:self.events.put(('status',0,message)),title=title,author=projects[0].get('author',''),shared_runtime=True)
                 self.events.put(('export',0,str(result)))
             except Exception as exc:
                 self.events.put(('error',0,str(exc)))
@@ -338,26 +338,52 @@ class Creator(QMainWindow):
     def update_fbmods(self):
         if self.busy:
             return
-        paths,_ = QFileDialog.getOpenFileNames(self,'Update existing Deck Tool packs',filter='ReSkate mod (*.fbmod)')
+        paths,_ = QFileDialog.getOpenFileNames(self,'Move older packs to the shared runtime (once)',filter='ReSkate mod (*.fbmod)')
         if not paths:
             return
-        folder = QFileDialog.getExistingDirectory(self,'Save compatible copies in…')
+        folder = QFileDialog.getExistingDirectory(self,'Save runtime-based copies in…')
         if not folder:
             return
         self.set_busy(True)
-        self.status.setText('Updating existing packs…')
+        self.status.setText('Moving packs to the shared runtime…')
         def run():
-            from fbmod_compat import update_file
+            from effects_runtime import write_runtime_export
             saved,failed = [],[]
             for path in paths:
-                destination = Path(folder)/(Path(path).stem+' - Compatible.fbmod')
+                destination = Path(folder)/(Path(path).stem+' - Runtime.fbmod')
                 self.events.put(('status',0,'Updating '+Path(path).name+'…'))
                 try:
-                    decks = update_file(path,destination)
+                    if destination.resolve()==Path(path).resolve():
+                        raise ValueError('Choose a separate destination for the migrated copy.')
+                    decks = write_runtime_export(Path(path).read_bytes(),destination)['decks']
                     saved.append(str(destination)+f' ({decks} decks)')
                 except Exception as exc:
                     failed.append(Path(path).name+': '+str(exc))
             self.events.put(('compatibility',0,(saved,failed)))
+        threading.Thread(target=run,daemon=True).start()
+
+    def runtime_setup(self):
+        if self.busy:
+            return
+        from effects_runtime import RUNTIME_NAME
+        path,_ = QFileDialog.getSaveFileName(self,'Save the shared effects runtime',
+                                            RUNTIME_NAME+'.fbmod','ReSkate mod (*.fbmod)')
+        if not path:
+            return
+        self.set_busy(True)
+        def run():
+            try:
+                from effects_runtime import build_runtime
+                target=Path(path)
+                temporary=target.with_name(target.name+'.'+uuid.uuid4().hex+'.partial')
+                try:
+                    temporary.write_bytes(build_runtime())
+                    temporary.replace(target)
+                finally:
+                    temporary.unlink(missing_ok=True)
+                self.events.put(('runtime_saved',0,str(target)))
+            except Exception as exc:
+                self.events.put(('error',0,str(exc)))
         threading.Thread(target=run,daemon=True).start()
 
     def guide(self):
@@ -428,8 +454,27 @@ class Creator(QMainWindow):
         threading.Thread(target=run,daemon=True).start()
 
     def open_update(self):
-        if self.release:
+        if not self.release or self.busy:
+            return
+        if not getattr(sys,'frozen',False) or not self.release.download_url:
             __import__('webbrowser').open(self.release.url)
+            return
+        if not self.discard():
+            return
+        self.set_busy(True)
+        self.update_button.setEnabled(False)
+        self.update_button.setText('Downloading update…')
+        release=self.release
+        def run():
+            import tempfile
+            from updates import download_update
+            try:
+                folder=tempfile.mkdtemp(prefix='reskate-update-')
+                download=download_update(release,folder,lambda done,total:self.events.put(('update_progress',0,round(done*100/total))))
+                self.events.put(('update_ready',0,(download,release.sha256)))
+            except Exception as exc:
+                self.events.put(('update_failed',0,str(exc)))
+        threading.Thread(target=run,daemon=True).start()
 
     def closeEvent(self,event):
         if self.busy:
@@ -671,7 +716,7 @@ class Creator(QMainWindow):
         footer.addWidget(self.status,1)
         footer.addWidget(QLabel(self.quote))
         outer.addLayout(footer)
-        for name,items in [('File',[('Open project…',self.open_project),('Save',self.save_project),('Update existing FBMODs…',self.update_fbmods)]),('Deck',[('Add deck',self.add_deck),('Remove selected',lambda:self.remove_deck(self.selected))]),('View',[('Enlarge preview',self.enlarge)]),('Help',[('Guide',self.guide)])]:
+        for name,items in [('File',[('Open project…',self.open_project),('Save',self.save_project),('Effects runtime setup…',self.runtime_setup),('Migrate older packs (once)…',self.update_fbmods)]),('Deck',[('Add deck',self.add_deck),('Remove selected',lambda:self.remove_deck(self.selected))]),('View',[('Enlarge preview',self.enlarge)]),('Help',[('Guide',self.guide)])]:
             menu = self.menuBar().addMenu(name)
             for text,action in items:
                 menu.addAction(text,action)
@@ -953,23 +998,48 @@ class Creator(QMainWindow):
                 if result:
                     self.release = result
                     self.update_button.show()
+            elif kind=='update_progress':
+                self.update_button.setText(f'Downloading update {result}%')
+            elif kind=='update_ready':
+                try:
+                    from updates import stage_install
+                    stage_install(result[0],sys.executable,result[1])
+                except Exception as exc:
+                    self.set_busy(False)
+                    self.update_button.setEnabled(True)
+                    self.update_button.setText('Update available')
+                    QMessageBox.warning(self,'Update failed',str(exc))
+                else:
+                    self.baseline=self.workspace()
+                    self.set_busy(False)
+                    self.close()
+                    QApplication.instance().quit()
+            elif kind=='update_failed':
+                self.set_busy(False)
+                self.update_button.setEnabled(True)
+                self.update_button.setText('Update available')
+                QMessageBox.warning(self,'Update failed',result)
             elif kind=='status':
                 self.status.setText(result)
+            elif kind=='runtime_saved':
+                self.set_busy(False)
+                self.status.setText('Runtime saved: '+result)
+                QMessageBox.information(self,'Effects runtime ready','Import this runtime in ReSkate Studio once. Future deck exports use it instead of carrying their own shaders. Replace this runtime when updating effects; migrated artwork packs stay installed.\n\n'+result)
             elif kind=='compatibility':
                 self.set_busy(False)
                 saved,failed = result
                 self.status.setText(f'Updated {len(saved)} pack(s); {len(failed)} skipped.')
                 message = 'Original files were left unchanged.\n\n'
                 if saved:
-                    message += 'Saved:\n'+'\n'.join(saved)+'\n\nImport the compatible copies in ReSkate Studio and replace the older versions in your mod list. Update every older effect pack you use together.'
+                    message += 'Saved:\n'+'\n'.join(saved)+'\n\nImport ReSkate Effects Runtime.fbmod once, then import these content copies and disable their older bundled versions. This is a one-time migration; future effects update the shared runtime.'
                 if failed:
                     message += '\n\nSkipped:\n'+'\n'.join(failed)
-                QMessageBox.information(self,'Compatibility update',message)
+                QMessageBox.information(self,'Shared runtime migration',message)
             elif kind in ('export','error'):
                 self.set_busy(False)
                 if kind=='export':
                     self.status.setText('Saved: '+result)
-                    QMessageBox.information(self,'Export complete','Saved your FBMOD. Import it in ReSkate Studio to install it.\n\n'+result)
+                    QMessageBox.information(self,'Export complete','Saved your content FBMOD and the shared effects runtime beside it. Import both in ReSkate Studio the first time; later content packs reuse the installed runtime. The .runtime.json file records the dependency.\n\n'+result)
                 else:
                     QMessageBox.critical(self,'Operation failed',result)
             elif kind=='depth':

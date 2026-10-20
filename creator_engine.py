@@ -132,7 +132,7 @@ def rename_item(raw,name):
 def export(a,b,dest,progress=lambda message:None,*,name="My Lenticular Deck",author="",fit="Stretch",background="#ffffff",thumbnail_path=None):
     return export_pack([dict(images=[str(a),str(b)],name=name,author=author,fit=fit,background=background,thumbnail=thumbnail_path)],dest,progress,title=name,author=author)
 
-def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular Deck Pack",author=""):
+def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular Deck Pack",author="",shared_runtime=False):
     import copy
     import tempfile
     import image_placement
@@ -160,10 +160,10 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
                 image.save(target)
                 project['images'][index] = str(target)
             project['fit'] = 'Stretch'
-        return _export_pack(projects,dest,progress,title=title,author=author)
+        return _export_pack(projects,dest,progress,title=title,author=author,shared_runtime=shared_runtime)
 
 
-def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular Deck Pack",author=""):
+def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular Deck Pack",author="",shared_runtime=False):
     dest=Path(dest).resolve()
     if dest.suffix.lower()!='.fbmod':raise ValueError('Choose an .fbmod output file.')
     if not projects:raise ValueError('Add at least one deck to the pack.')
@@ -232,6 +232,11 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     progress('Applying sticker compatibility…')
     result, _ = compatible(result)
     dest.parent.mkdir(parents=True,exist_ok=True)
+    if shared_runtime:
+        from effects_runtime import write_runtime_export
+        progress('Separating artwork from the shared effects runtime…')
+        write_runtime_export(result,dest,overwrite=True)
+        progress('Export complete.');return dest
     temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
     progress('Export complete.');return dest
 

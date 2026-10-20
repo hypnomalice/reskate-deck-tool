@@ -9,23 +9,28 @@ The source code is here, we had to use ai assistance to finally get the damn thi
 
 
 
-### Updating older deck packs
+### Shared effects runtime — 1.1 test build
 
-New exports include the sticker compatibility fix for lenticular, depth-map,
-foreground/background and animated decks. To update existing packs, choose
-**File > Update existing FBMODs...**, select one or more Deck Tool exports, then
-choose an output folder. The tool creates `- Compatible.fbmod` copies and keeps
-original files unchanged. Import the copies in shader-capable ReSkate Studio,
-replacing the older versions in your mod list. Update all older effect packs
-that you enable together, as they share renderer resources.
+New exports contain artwork and settings, with `ReSkate Effects Runtime.fbmod`
+saved beside them. Import the runtime once in ReSkate Studio, then import your
+content packs. Effects are maintained in the runtime; older migrated content
+keeps its existing format when effects are added.
 
-The updater supports recognised Deck Tool renderers and uncompressed creator
-exports. It skips unsupported files with an explanation; it does not convert
-arbitrary third-party mods. The sticker fix preserves original artwork pixels,
-uses full-resolution artwork separately from stickers, and keeps effect motion
-on intact and broken boards. The gameplay lighting/darkness issue is still
-being investigated.
+For existing packs, choose **File > Migrate older packs (once)…**. Import the
+new content copies and disable their old bundled versions. Originals are kept.
+Use **File > Effects runtime setup…** to save an updated runtime for import.
+There is no repeated “fix FBMOD compatibility” step for migrated content.
 
+The runtime and converted packs have passed user testing with Animated Skulls
+Croptop 1.0.0, including reversed order, stickers and Board Break. This verifies
+that specific combination, not every third-party shader. Shared native shader
+identities remain; automatic launcher installation and dependency enforcement
+are not yet included. See [runtime details](docs/shared-runtime.md).
+
+### Previous release history
+
+The following repair instructions describe older releases and their standalone
+exports. The shared-runtime build uses the one-time migration above instead.
 
 ### Important: repairing v0.1.5-beta.1 exports
 
