@@ -1,6 +1,7 @@
 import numpy as np
 from PIL import Image, ImageOps
 
+import deck_shape
 import image_placement
 from effect_preview import linear, display
 from layer_atlas import encode_linear
@@ -12,7 +13,8 @@ def render(sources, deck, angle, size=(180,720)):
     images = [image_placement.frame(source,
               deck['background_fit'] if mode=='layers' and index==1 else deck['fit'],
               deck['background'],deck['placement'][index],size=size,
-              alpha=mode=='layers' and index==0,depth=mode=='depth' and index==1)
+              alpha=mode=='layers' and index==0,depth=mode=='depth' and index==1,
+              **deck_shape.placement(deck,index))
               for index,source in enumerate(sources)]
     width,height = size
     x = np.broadcast_to(np.arange(width,dtype=np.float32),(height,width))

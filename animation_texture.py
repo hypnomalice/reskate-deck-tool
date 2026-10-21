@@ -33,7 +33,7 @@ def read_word(colour):
     return result
 
 
-def atlas(clip, brightness=2, background="#ffffff", placement=None, quality=1):
+def atlas(clip, brightness=2, background="#ffffff", placement=None, quality=1, region=None):
     if quality not in (1,2,4):
         raise ValueError('Animation quality must be 1, 2 or 4.')
     if not 1 <= len(clip.frames) <= 512:
@@ -47,9 +47,12 @@ def atlas(clip, brightness=2, background="#ffffff", placement=None, quality=1):
     ox, oy = (float(settings.get(axis, 0)) for axis in ('x','y'))
     if not all(math.isfinite(v) for v in (zoom,ox,oy,brightness)) or not .1 <= zoom <= 5 or max(abs(ox),abs(oy)) > 1 or not .1 <= brightness <= 4:
         raise ValueError('Invalid animation placement or brightness.')
-    scale = min(1,512/original.width,2048/original.height)*zoom
+    # region: fit inside a custom deck outline's box (fractions of the board) instead of all of it
+    rl, rt, rr, rb = region or (0, 0, 1, 1)
+    area_w, area_h = 512*(rr-rl), 2048*(rb-rt)
+    scale = min(1,area_w/original.width,area_h/original.height)*zoom
     full_w, full_h = (max(1,round(v*scale)) for v in original.size)
-    left, top = round((512-full_w)/2+ox*512), round((2048-full_h)/2+oy*2048)
+    left, top = round(512*rl+(area_w-full_w)/2+ox*area_w), round(2048*rt+(area_h-full_h)/2+oy*area_h)
     x0,y0,x1,y1=max(0,left),max(0,top),min(512,left+full_w),min(2048,top+full_h)
     if x1<=x0 or y1<=y0:
         raise ValueError('The animation is entirely outside the board.')
@@ -99,7 +102,7 @@ def atlas(clip, brightness=2, background="#ffffff", placement=None, quality=1):
 
 
 
-def preview_frame(clip, index, background, placement):
+def preview_frame(clip, index, background, placement, region=None):
     frame = clip.frames[index].convert('RGBA')
     channels = frame.split()
     lut=[]
@@ -109,4 +112,4 @@ def preview_frame(clip, index, background, placement):
         lut.append(srgb(2*linear/(1+linear)))
     lifted=Image.merge('RGBA',tuple(c.point(lut) for c in channels[:3])+(channels[3],))
     one=animation.Animation((lifted,),(100,),0)
-    return one.board_frame(0,background=background,placement=placement)
+    return one.board_frame(0,background=background,placement=placement,region=region)

@@ -30,7 +30,7 @@ def atlas(a,b,fit="Stretch",background="#ffffff"):
         ImageDraw.Draw(im).rectangle((x*128,0,x*128+127,63),fill=color)
     return im
 
-def thumbnail(a,b,custom=None,fit="Stretch",background="#ffffff",size=768,label="LENTICULAR"):
+def thumbnail(a,b,custom=None,fit="Stretch",background="#ffffff",size=768,label="LENTICULAR",shape=None):
     if custom:
         with Image.open(custom) as source:
             im=ImageOps.exif_transpose(source).convert('RGBA')
@@ -38,7 +38,8 @@ def thumbnail(a,b,custom=None,fit="Stretch",background="#ffffff",size=768,label=
     out=Image.new('RGBA',(size,size),(0,0,0,0))
     height=round(size*.79);width=height//4;top=round(size*.035);gap=round(size*.055)
     left=(size-width*2-gap)//2
-    mask=Image.new('L',(width,height));ImageDraw.Draw(mask).rounded_rectangle((0,0,width-1,height-1),radius=width//2,fill=255)
+    if shape is not None:mask=shape.mask_at((width,height))
+    else:mask=Image.new('L',(width,height));ImageDraw.Draw(mask).rounded_rectangle((0,0,width-1,height-1),radius=width//2,fill=255)
     for i,path in enumerate([a,b]):
         graphic=artwork(path,fit,background).resize((width,height),Image.Resampling.LANCZOS).convert('RGBA')
         graphic.putalpha(mask);out.alpha_composite(graphic,(left+i*(width+gap),top))
@@ -136,6 +137,7 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
     import copy
     import tempfile
     import image_placement
+    import deck_shape
     projects = copy.deepcopy(projects)
     with tempfile.TemporaryDirectory(prefix='lenticular-framing-') as scratch:
         for number, project in enumerate(projects):
@@ -146,7 +148,8 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
                 continue
             placements = project.get('placement')
             background_fit = project.get('background_fit') if project.get('mode')=='layers' else None
-            if not background_fit and (not placements or all(all(float(p.get(k,d)) == d for k,d in [('zoom',1),('x',0),('y',0)]) for p in placements)):
+            shaped = deck_shape.placement(project)['region'] is not None
+            if not background_fit and not shaped and (not placements or all(all(float(p.get(k,d)) == d for k,d in [('zoom',1),('x',0),('y',0)]) for p in placements)):
                 continue
             placements = placements or [dict(zoom=1,x=0,y=0)]*2
             if len(placements) != 2:
@@ -155,7 +158,8 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
                 fit = background_fit if background_fit and index==1 else project.get('fit','Stretch')
                 image = image_placement.frame(path, fit, project.get('background','#ffffff'),
                     placements[index], alpha=project.get('mode')=='layers' and index==0,
-                    depth=project.get('mode') in ('depth','ghost') and index==1)
+                    depth=project.get('mode') in ('depth','ghost') and index==1,
+                    **deck_shape.placement(project, index))
                 target = Path(scratch)/f'{number}-{index}.png'
                 image.save(target)
                 project['images'][index] = str(target)
@@ -176,16 +180,19 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         names.add(name.casefold())
         a,b=project['images'];fit=project.get('fit','Stretch');background=project.get('background','#ffffff');custom=project.get('thumbnail')
         mode=project.get('mode','classic')
+        import deck_shape
+        shape=deck_shape.for_deck(project)
+        region=deck_shape.placement(project)['region'] if mode=='gif' else None
         if mode not in ['classic','depth','layers','gif','ghost']:raise ValueError('Unsupported deck mode.')
         if fit not in ['Stretch','Crop to fill','Fit entire image']:raise ValueError('Choose a supported image sizing option.')
         if dest in [Path(p).resolve() for p in [a,b,custom] if p]+[(ROOT/'engine/template.fbmod').resolve()]:raise ValueError('Choose a separate output file.')
         progress(f'Deck {number} of {len(projects)}: {name}')
         if mode == 'gif':
             clip=animation.load(a)
-            packed,metadata=animation_texture.atlas(clip,background=background,placement=(project.get('placement') or [{}])[0],quality=project.get('animation',{}).get('quality',1))
+            packed,metadata=animation_texture.atlas(clip,background=background,placement=(project.get('placement') or [{}])[0],quality=project.get('animation',{}).get('quality',1),region=region)
             texture=encode(packed,progress,profile='fast',mipmaps=False)
-            first=animation_texture.preview_frame(clip,0,background,(project.get('placement') or [{}])[0])
-            thumb=thumbnail(first,first,custom,background=background,label='ANIMATED')
+            first=animation_texture.preview_frame(clip,0,background,(project.get('placement') or [{}])[0],region)
+            thumb=thumbnail(first,first,custom,background=background,label='ANIMATED',shape=shape)
         elif mode in ['depth','layers','ghost']:
             settings=project.get('depth',{})
             if mode=='layers':
@@ -207,10 +214,10 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
                 else:
                     views=depth_views.views(image,depth,settings.get('strength',.04),settings.get('convergence',.5),progress)
                     texture=encode(depth_views.pack(views,settings.get('bands',1),balanced=True),progress)
-            thumb=thumbnail(views[0],views[-1],custom,fit,background)
+            thumb=thumbnail(views[0],views[-1],custom,fit,background,shape=shape)
         else:
             texture=encode(atlas(a,b,fit,background),progress)
-            thumb=thumbnail(a,b,custom,fit,background)
+            thumb=thumbnail(a,b,custom,fit,background,shape=shape)
         wood=None
         if project.get('wood_tint'):
             import math

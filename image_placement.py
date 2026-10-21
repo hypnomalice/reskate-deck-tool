@@ -2,7 +2,26 @@ import math
 from PIL import Image, ImageOps
 
 
-def frame(path, fit='Stretch', background='#ffffff', placement=None, *, alpha=False, depth=False, size=(512,2048)):
+def frame(path, fit='Stretch', background='#ffffff', placement=None, *, alpha=False, depth=False, size=(512,2048),
+          region=None, bleed=False):
+    """Place artwork on the board canvas.
+
+    region (left, top, right, bottom fractions) fits and positions the artwork in
+    part of the canvas, such as a custom deck outline's bounding box, instead of
+    the whole canvas. bleed then repeats the region's edge pixels to the border.
+    """
+    if region is not None:
+        import deck_shape
+        x0, y0, x1, y1 = deck_shape.region_pixels(region, size)
+        inner = frame(path, fit, background, placement, alpha=alpha, depth=depth, size=(x1-x0, y1-y0))
+        if bleed:
+            canvas = Image.new(inner.mode, size)
+            canvas.paste(inner, (x0, y0))
+            return deck_shape.bleed(canvas, region)
+        fill = 128 if depth else (0, 0, 0, 0) if alpha else background
+        canvas = Image.new(inner.mode, size, fill)
+        canvas.paste(inner, (x0, y0))
+        return canvas
     if isinstance(path,Image.Image):
         image = ImageOps.exif_transpose(path).convert('L' if depth else 'RGBA')
     else:
