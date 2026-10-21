@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
 import creator_engine as engine
 import animation
 import animation_texture
+import deck_shape
 import image_placement
 import preview_depth
 import live_placement
@@ -135,7 +136,61 @@ class Board(QWidget):
         self.frame = None
         self.wood = '#9a7855'
         self.guides = True
+        self.shape = None
+        self._shape_cache = {}
         self.setMinimumSize(250,180)
+
+    def set_shape(self,shape):
+        if shape is not self.shape:
+            self.shape = shape
+            self._shape_cache.clear()
+            self.update()
+
+    def _shape_layers(self,size):
+        key = (size,self.wood)
+        if key not in self._shape_cache:
+            if len(self._shape_cache)>6:
+                self._shape_cache.clear()
+            mask = self.shape.mask_at(size)
+            ring = self.shape.outline_at(size,3)
+            wood = Image.new('RGBA',size,QColor(self.wood).name())
+            wood.putalpha(ring)
+            self._shape_cache[key] = (qt_image(Image.merge('RGBA',(mask,mask,mask,mask))),qt_image(wood))
+        return self._shape_cache[key]
+
+    def paint_shape(self,painter,area):
+        size = (max(1,round(area.width())),max(1,round(area.height())))
+        mask,outline = self._shape_layers(size)
+        board = QImage(size[0],size[1],QImage.Format_ARGB32_Premultiplied)
+        board.fill(Qt.transparent)
+        p = QPainter(board)
+        p.setRenderHint(QPainter.SmoothPixmapTransform)
+        p.fillRect(board.rect(),QColor('#30353b'))
+        if self.frame is not None:
+            p.drawPixmap(QRectF(0,0,*size),self.frame,QRectF(self.frame.rect()))
+        p.setCompositionMode(QPainter.CompositionMode_DestinationIn)
+        p.drawImage(0,0,mask)
+        p.end()
+        left,top = round(area.left()),round(area.top())
+        painter.drawImage(left,top,board)
+        painter.drawImage(left,top,outline)
+        if self.frame is None:
+            painter.setPen(QColor('#aeb7c1'))
+            painter.drawText(self.rect(),Qt.AlignCenter,'Choose artwork to preview')
+        if self.guides and self.shape.trucks:
+            w,h = area.width(),area.height()
+            painter.setPen(QPen(QColor('#bec8d1'),1,Qt.DashLine))
+            painter.setBrush(Qt.NoBrush)
+            for u,v,bolts in self.shape.trucks:
+                y = area.top()+h*v
+                painter.drawLine(round(area.left()-8),round(y),round(area.right()+8),round(y))
+                if bolts:
+                    xs = [area.left()+w*bu for bu,_ in bolts]
+                    ys = [area.top()+h*bv for _,bv in bolts]
+                    pad = max(3,w*.05)
+                    painter.drawRoundedRect(QRectF(min(xs)-pad,min(ys)-pad,max(xs)-min(xs)+2*pad,max(ys)-min(ys)+2*pad),3,3)
+                    for bx,by in zip(xs,ys):
+                        painter.drawEllipse(QRectF(bx-2,by-2,4,4))
 
     def paintEvent(self,event):
         painter = QPainter(self)
@@ -144,6 +199,9 @@ class Board(QWidget):
         h = min(self.height()-30,(self.width()-45)*4)
         w = h/4
         area = QRectF((self.width()-w)/2,(self.height()-h)/2,w,h)
+        if self.shape is not None:
+            self.paint_shape(painter,area)
+            return
         path = QPainterPath()
         path.addRoundedRect(area,w/2,w/2)
         painter.setPen(QPen(QColor(self.wood),5))
@@ -195,7 +253,8 @@ def default_deck(name='My Deck'):
         background_fit='Crop to fill',background='#ffffff',thumbnail=None,
         placement=[dict(zoom=1,x=0,y=0),dict(zoom=1,x=0,y=0)],
         depth=dict(strength=.04,convergence=.5,bands=1,invert=False),
-        animation=dict(quality=2),wood_tint=None,wood_intensity=1)
+        animation=dict(quality=2),wood_tint=None,wood_intensity=1,
+        shape=None,fit_to_shape=True,shape_bleed=True)
 
 
 class Creator(QMainWindow):
@@ -291,6 +350,8 @@ class Creator(QMainWindow):
             deck['images'] = [str((Path(path).parent/p).resolve()) if p else None for p in deck['images']]
             if deck.get('thumbnail'):
                 deck['thumbnail'] = str((Path(path).parent/deck['thumbnail']).resolve())
+            if deck.get('shape'):
+                deck['shape'] = str((Path(path).parent/deck['shape']).resolve())
             normalized.append(deck)
         self.decks = normalized
         self.selected = max(0,min(data.get('selected',0),len(decks)-1))
@@ -576,6 +637,33 @@ class Creator(QMainWindow):
         self.quality.currentIndexChanged.connect(lambda _:self.remember())
         images.addWidget(self.quality)
         left.addWidget(group)
+        shapebox = QGroupBox('Deck shape')
+        shapes = QVBoxLayout(shapebox)
+        row = QHBoxLayout()
+        self.shape_name = QLineEdit()
+        self.shape_name.setReadOnly(True)
+        self.shape_name.setPlaceholderText('Standard popsicle')
+        row.addWidget(self.shape_name,1)
+        button('Load…',self.choose_shape,row)
+        self.shape_clear = button('Standard',self.clear_shape,row)
+        shapes.addLayout(row)
+        row = QHBoxLayout()
+        self.fit_to_shape = QCheckBox('Fit artwork to the shape')
+        self.fit_to_shape.setChecked(True)
+        self.fit_to_shape.toggled.connect(self.changed)
+        row.addWidget(self.fit_to_shape)
+        row.addStretch()
+        help_button('Load the <name>_deck_shape.json that SVG2Deck writes in its Deck folder (an <name>_underside_layout.png also works, without truck guides). The preview, truck guides and thumbnail then follow your shape.\n\nFit artwork to the shape sizes and positions artwork inside the outline instead of the whole 512 × 2048 canvas. Turn it off for art that is already in board space, such as SVG2Deck\'s Graphics Update files or art painted on the underside layout.\n\nThe exported graphic still works on any deck; the shape only changes where your artwork goes.',row)
+        shapes.addLayout(row)
+        row = QHBoxLayout()
+        self.shape_bleed = QCheckBox('Extend edges past the outline')
+        self.shape_bleed.setChecked(True)
+        self.shape_bleed.toggled.connect(self.changed)
+        row.addWidget(self.shape_bleed)
+        row.addStretch()
+        help_button('Repeats the artwork\'s edge pixels outside the outline, so depth and parallax movement or texture filtering never show the padding colour at the deck edge.',row)
+        shapes.addLayout(row)
+        left.addWidget(shapebox)
         wood = QGroupBox('Wood')
         woodbox = QVBoxLayout(wood)
         row = QHBoxLayout()
@@ -730,7 +818,8 @@ class Creator(QMainWindow):
         d = self.current()
         d.update(name=self.name.text(),author=self.author.text(),mode=list(MODES)[self.mode.currentIndex()],lenticular=self.lenticular.isChecked(),fit=self.fit.currentText(),background_fit=self.backfit.currentText(),
             depth=dict(strength=self.strength.value()/100,convergence=self.convergence.value()/100,bands=self.bands.value()/100,invert=self.invert.isChecked()),
-            animation=dict(quality=(1,2,4)[self.quality.currentIndex()]),wood_tint=d.get('wood_colour',d.get('wood_tint') or '#b98a56') if self.wood_mode.currentIndex() else None,wood_intensity=self.intensity.value()/100)
+            animation=dict(quality=(1,2,4)[self.quality.currentIndex()]),
+            fit_to_shape=self.fit_to_shape.isChecked(),shape_bleed=self.shape_bleed.isChecked(),wood_tint=d.get('wood_colour',d.get('wood_tint') or '#b98a56') if self.wood_mode.currentIndex() else None,wood_intensity=self.intensity.value()/100)
 
     def workspace(self):
         self.remember()
@@ -762,6 +851,9 @@ class Creator(QMainWindow):
         self.lenticular.setChecked(d.get('lenticular',True))
         self.wood_mode.setCurrentIndex(1 if d.get('wood_tint') else 0)
         self.intensity.set_value(d.get('wood_intensity',1)*100)
+        self.fit_to_shape.setChecked(d.get('fit_to_shape',True))
+        self.shape_bleed.setChecked(d.get('shape_bleed',True))
+        self.apply_shape()
         self.placement_open = False
         self.placement_index = None
         self.loading = False
@@ -795,6 +887,8 @@ class Creator(QMainWindow):
         self.detail_toggle.setEnabled(mode in ('depth','layers') and self.lenticular.isChecked())
         self.detail_toggle.setVisible(mode in ('depth','layers') and self.lenticular.isChecked())
         self.placement_choice.setEnabled(mode not in ('depth','ghost','gif'))
+        self.fit_to_shape.setEnabled(self.board.shape is not None and not self.busy)
+        self.shape_bleed.setEnabled(self.board.shape is not None and self.fit_to_shape.isChecked() and mode!='gif' and not self.busy)
         if mode in ('depth','ghost','gif'):
             self.placement_choice.setCurrentIndex(0)
 
@@ -853,6 +947,43 @@ class Creator(QMainWindow):
             self.current()['images'][index] = path
             self.update_mode()
             self.schedule()
+
+    def choose_shape(self):
+        path,_ = QFileDialog.getOpenFileName(self,'Choose deck shape','','Deck shape (*_deck_shape.json *.json *.png)')
+        if not path:
+            return
+        try:
+            deck_shape.load(path)
+        except Exception as exc:
+            QMessageBox.warning(self,'Deck shape',str(exc))
+            return
+        self.remember()
+        self.current()['shape'] = path
+        self.apply_shape()
+        self.update_mode()
+        self.schedule()
+
+    def clear_shape(self):
+        self.remember()
+        self.current()['shape'] = None
+        self.apply_shape()
+        self.update_mode()
+        self.schedule()
+
+    def apply_shape(self):
+        d = self.current()
+        shape = None
+        if d.get('shape'):
+            try:
+                shape = deck_shape.load(d['shape'])
+            except Exception as exc:
+                self.status.setText('Deck shape: '+str(exc))
+        self.shape_name.setText(shape.name if shape else (Path(d['shape']).name+' (missing)' if d.get('shape') else ''))
+        self.shape_name.setToolTip(d.get('shape') or 'Standard popsicle')
+        self.shape_clear.setEnabled(bool(d.get('shape')))
+        for board in (self.board,self.large_board if self.large else None):
+            if board is not None:
+                board.set_shape(shape)
 
     def swap(self):
         self.current()['images'].reverse()
@@ -918,7 +1049,7 @@ class Creator(QMainWindow):
                 settings = d.get('depth',{})
                 if d['mode']=='gif':
                     clip = cached_clip if cached_clip is not None else animation.load(d['images'][0])
-                    still = animation_texture.preview_frame(clip,0,d['background'],d['placement'][0])
+                    still = animation_texture.preview_frame(clip,0,d['background'],d['placement'][0],deck_shape.placement(d)['region'])
                     result = (None,None,clip,[still,still],None,clip_key)
                 else:
                     sources = cached_sources
@@ -929,7 +1060,7 @@ class Creator(QMainWindow):
                                 source = ImageOps.exif_transpose(source).convert('RGBA')
                                 source.thumbnail((1024,4096),Image.Resampling.LANCZOS)
                                 sources.append(source)
-                    images = [image_placement.frame(source,d['background_fit'] if d['mode']=='layers' and i==1 else d['fit'],d['background'],d['placement'][i],alpha=d['mode']=='layers' and i==0,depth=d['mode'] in ('depth','ghost') and i==1) for i,source in enumerate(sources)]
+                    images = [image_placement.frame(source,d['background_fit'] if d['mode']=='layers' and i==1 else d['fit'],d['background'],d['placement'][i],alpha=d['mode']=='layers' and i==0,depth=d['mode'] in ('depth','ghost') and i==1,**deck_shape.placement(d,i)) for i,source in enumerate(sources)]
                     if d['mode'] in ('depth','ghost') and settings.get('invert'):
                         images[1] = ImageOps.invert(images[1].convert('RGB'))
                     strength,convergence,bands = (settings.get(k,v) for k,v in [('strength',.04),('convergence',.5),('bands',1)])
@@ -1093,7 +1224,7 @@ class Creator(QMainWindow):
         if self.clip:
             if gif_index not in self.gif_cache:
                 d = self.current()
-                self.gif_cache[gif_index] = animation_texture.preview_frame(self.clip,gif_index,d['background'],d['placement'][0])
+                self.gif_cache[gif_index] = animation_texture.preview_frame(self.clip,gif_index,d['background'],d['placement'][0],deck_shape.placement(d)['region'])
                 while len(self.gif_cache)>4:
                     self.gif_cache.pop(next(iter(self.gif_cache)))
             image = self.gif_cache[gif_index]
@@ -1164,7 +1295,7 @@ class Creator(QMainWindow):
         try:
             sources = self.thumbnail_sources if self.renderer or self.clip else [None,None]
             if custom or all(x is not None for x in sources):
-                image = engine.thumbnail(*sources,custom,size=64,label='ANIMATED' if d['mode']=='gif' else 'LENTICULAR')
+                image = engine.thumbnail(*sources,custom,size=64,label='ANIMATED' if d['mode']=='gif' else 'LENTICULAR',shape=self.board.shape)
                 self.thumb.setPixmap(QPixmap.fromImage(qt_image(image)))
             else:
                 self.thumb.clear()
@@ -1249,6 +1380,7 @@ class Creator(QMainWindow):
         self.large_board = Board()
         self.large_board.guides = self.guides.isChecked()
         self.large_board.wood = self.board.wood
+        self.large_board.set_shape(self.board.shape)
         layout.addWidget(self.large_board,1)
         angle = Adjustment('Viewing angle',self.angle.value(),-100,100)
         angle.changed.connect(lambda value:self.angle.spin.setValue(value))

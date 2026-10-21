@@ -93,6 +93,30 @@ The tool exports files; it does not install or enable them.
 The in-app Guide and question-mark tooltips explain the controls. The preview is
 approximate: lighting, deck curvature and gameplay can change the result.
 
+### Custom deck shapes (SVG2Deck)
+
+Deck graphics are drawn through the deck's board-space UVs: the underside is one
+straight top-down 512 × 2048 tile. SVG2Deck builds shaped decks in that same tile,
+so the exported graphic needs no changes; only artwork placement does.
+
+1. Run SVG2Deck (2026-10-20a or newer). Its `Deck` folder gets
+   `<name>_deck_shape.json` beside `<name>_underside_layout.png`.
+2. Under **Deck shape**, choose **Load…** and pick the JSON. An
+   `_underside_layout.png` works too, but it has no truck positions.
+3. The preview, truck guides and thumbnail follow the outline.
+   **Fit artwork to the shape** sizes and positions artwork inside the outline's
+   bounds instead of the whole canvas. Turn it off for art that is already in board
+   space (SVG2Deck's `Graphics Update` files, or art painted on the underside layout).
+   **Extend edges past the outline** repeats edge pixels outward so parallax, depth
+   and texture filtering never show the padding colour at the deck edge.
+4. To check alignment in game, load `<name>_alignment_test_graphic.png` as a
+   Lenticular deck's images with fitting turned off. Its white line should sit
+   exactly on the deck edge.
+
+**Standard** returns to the popsicle preview. Wood tint still uses the popsicle wood
+texture. SVG2Deck keeps the popsicle UV0 regions, so the grain lines up, but a
+tinted deck is expected to cover base art painted on your deck. Test it in game.
+
 ### Effects
 
 - **Lenticular:** two graphics flip as the viewing angle changes.

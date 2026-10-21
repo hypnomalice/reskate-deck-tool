@@ -26,19 +26,22 @@ class Animation:
             return len(self.frames) - 1
         return bisect_right(self.ends_ms, time % self.duration_ms)
 
-    def board_frame(self, index, size=(512, 2048), background='#ffffff', placement=None):
+    def board_frame(self, index, size=(512, 2048), background='#ffffff', placement=None, region=None):
         frame = self.frames[index]
         settings = placement or {}
         zoom = float(settings.get('zoom', 1))
         x, y = (float(settings.get(axis, 0)) for axis in ('x', 'y'))
         if not all(math.isfinite(value) for value in (zoom, x, y)) or not .1 <= zoom <= 5 or max(abs(x), abs(y)) > 1:
             raise ValueError('Invalid animation placement.')
-        scale = min(1, size[0] / frame.width, size[1] / frame.height) * zoom
+        # region: fit inside part of the board (a custom deck outline) instead of all of it
+        left, top, right, bottom = region or (0, 0, 1, 1)
+        area = (size[0] * (right - left), size[1] * (bottom - top))
+        scale = min(1, area[0] / frame.width, area[1] / frame.height) * zoom
         width, height = max(1, round(frame.width * scale)), max(1, round(frame.height * scale))
         frame = frame.resize((width, height), Image.Resampling.LANCZOS)
         canvas = Image.new('RGBA', size, background)
-        offset = (round((size[0] - width) / 2 + x * size[0]),
-                  round((size[1] - height) / 2 + y * size[1]))
+        offset = (round(size[0] * left + (area[0] - width) / 2 + x * area[0]),
+                  round(size[1] * top + (area[1] - height) / 2 + y * area[1]))
         canvas.alpha_composite(frame, offset)
         return canvas.convert('RGB')
 
