@@ -97,7 +97,7 @@ def check(folder):
         assert struct.unpack_from('<H',wood,20)[0]==1
         assert struct.unpack_from('<HH',wood,22)==(1024,2048) and wood[30:34]==bytes((12,0,0,12))
         assert sum(struct.unpack_from('<15I',wood,56))==2796240
-        assert any(struct.unpack_from('<HH',raw,22)==(1024,8192) and raw[30:34]==bytes((1,0,0,1)) and struct.unpack_from('<H',raw,20)[0]&8 for raw in headers)
+        assert any(struct.unpack_from('<HH',raw,22)==(1024,8192) and raw[30:34]==bytes((1,0,0,1)) and struct.unpack_from('<H',raw,20)[0]==1 for raw in headers)
         for name,rid in textures:
             raw = next(raw for other,raw,resource_id in records if other==name and resource_id is None and raw.startswith(b'RIFF'))
             ebx = Ebx(raw)
@@ -121,22 +121,63 @@ def check(folder):
         assert global_bundles(new_archive.descriptors[new_archive.find(1,'characters/customization/reskate/board_bottomart/lenticular_black_rgb')])==global_bundles(lua)
         report['new_modes_output']=str(new_output)
         report['new_modes_resources']=len(new_archive.blobs)
-        from effects_runtime import write_runtime_export, COMPOSITOR
+        from effects_runtime import write_runtime_export, RUNTIME_NAME, COMPOSITOR, shared_keys
         runtime_folder = folder / 'shared-runtime'
         runtime_folder.mkdir(exist_ok=True)
         content_path = runtime_folder / 'Content.fbmod'
         write_runtime_export(new_output.read_bytes(), content_path, overwrite=True)
-        core = Archive((runtime_folder / 'ReSkate Effects Runtime.fbmod').read_bytes())
+        core = Archive((runtime_folder / (RUNTIME_NAME+'.fbmod')).read_bytes())
         core_keys = {core.key(i) for i in range(len(core.blobs))}
-        assert len(core_keys) == 12 and not core_keys & COMPOSITOR
+        assert len(core_keys) == 22 and not core_keys & COMPOSITOR
         assert core.find(2, 'shaders/bytecode/c6d7fd6d-42ea-3ad2-2d72-1e04a029fc90') is not None
         core_lua = unpack(core.blobs[core.find(2, 'characters/lua/luaskateboardcompositor')])
         assert b'deck:addBundleRef(emptyTexture)' in core_lua
         content = Archive(content_path.read_bytes())
         assert not any(content.key(i)[1].startswith('shaders/bytecode/') for i in range(len(content.blobs)))
-        report['shared_runtime'] = dict(resources=12, native_compositor=True,
+        report['shared_runtime'] = dict(resources=20, native_compositor=True,
                                        owned_background=True, scoped_foil=True,
                                        output=str(runtime_folder))
+        import layer_atlas
+        foreground=folder/'Parallax Foreground.png';middle=folder/'Parallax Middle.png'
+        Image.new('RGBA',(512,2048),(255,0,0,128)).save(foreground)
+        Image.new('RGBA',(512,2048),(0,255,0,128)).save(middle)
+        three=dict(name='Packaged Three Layer Parallax',mode='layers',images=[str(foreground.resolve()),images[1]],middle_image=str(middle.resolve()),layer_depths=[.1,.45,.9],lenticular=False,depth=dict(strength=.12,bands=0))
+        three_output=engine.export_pack([three],folder/'Three Layer Pack.fbmod',shared_runtime=True)
+        three_archive=Archive(three_output.read_bytes())
+        headers=[i for i in range(len(three_archive.blobs)) if three_archive.key(i)[0]==2 and three_archive.key(i)[1].endswith('_color')]
+        assert len(headers)==1
+        header=unpack(three_archive.blobs[headers[0]])
+        assert struct.unpack_from('<H',header,20)[0]==1 and header[30]==1
+        report['three_layer_output']=str(three_output)
+        report['three_layer_parallax']=True
+        finishes=[dict(name='Packaged Metallic Flakes',mode='metal',images=[images[0],None]),
+                  dict(name='Packaged Ink Flow',mode='ink',images=[images[0],str(depth.resolve())]),
+                  dict(name='Packaged Impossible Window',mode='window',images=[str(foreground.resolve()),images[1]],middle_image=str(middle.resolve()))]
+        finish_output=engine.export_pack(finishes,folder/'Finish Pack.fbmod',shared_runtime=True)
+        finish_archive=Archive(finish_output.read_bytes())
+        finish_headers=[unpack(finish_archive.blobs[i]) for i in range(len(finish_archive.blobs))
+                        if finish_archive.key(i)[0]==2 and finish_archive.key(i)[1].endswith('_color')]
+        assert len(finish_headers)==3 and all(struct.unpack_from('<H',h,20)[0]==1 and h[30]==1 for h in finish_headers)
+        assert not finish_output.with_suffix('.runtime.json').exists()
+        assert not set(finish_archive.key(i) for i in range(len(finish_archive.blobs))) & shared_keys()
+        report['finish_modes']=['metal','ink','window']
+        report['finish_output']=str(finish_output)
+        liquid=dict(name='Packaged Liquid Bottle',mode='liquid',images=[str(foreground.resolve()),images[1]],liquid=dict(colour='#9630d8',cloudiness=.4,depth=.09,amount=.73,thickness=.66))
+        liquid_output=engine.export_pack([liquid],folder/'Liquid Bottle Pack.fbmod',shared_runtime=True)
+        report['liquid_included']=True
+        report['liquid_output']=str(liquid_output)
+        report['liquid_controls']=['front_png','colour','cloudiness','depth','amount','background','visual_thickness']
+        advanced=[dict(name='Packaged Multi 4',mode='classic',images=images,extra_images=images),
+                  dict(name='Packaged Neon Mask',mode='neon',images=[images[0],str(depth.resolve())],neon=dict(selection='mask',brightness=1)),
+                  dict(name='Packaged Neon Colour',mode='neon',images=[images[0],None],neon=dict(selection='colour',colour='#276fbc',tolerance=.15,brightness=1))]
+        advanced_output=engine.export_pack(advanced,folder/'Advanced Pack.fbmod',shared_runtime=True)
+        advanced_archive=Archive(advanced_output.read_bytes())
+        assert not set(advanced_archive.key(i) for i in range(len(advanced_archive.blobs))) & shared_keys()
+        assert not advanced_output.with_suffix('.runtime.json').exists()
+        report['advanced_modes']=['multi-image-lenticular','neon-mask','neon-colour']
+        report['advanced_output']=str(advanced_output)
+        report['content_only_export']=True
+
 
     except Exception:
         import traceback

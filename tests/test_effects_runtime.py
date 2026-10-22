@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import deck_archive
-from effects_runtime import ABI, build_runtime, migrate_file, shared_keys, split_pack, write_runtime_export
+from effects_runtime import ABI, RUNTIME_NAME, build_runtime, migrate_file, shared_keys, split_pack, write_runtime_export
 from fbmod_compat import Archive, compatible
 
 
@@ -50,7 +50,7 @@ class RuntimeTests(unittest.TestCase):
         archive = Archive(build_runtime())
         keys = {archive.key(i) for i in range(len(archive.blobs))}
         self.assertFalse(keys & COMPOSITOR)
-        self.assertEqual(len(keys), 12)
+        self.assertEqual(len(keys), 22)
         for record, payload in _runtime_updates():
             i = archive.find(record['kind'], record['name'])
             self.assertIsNotNone(i)
@@ -76,10 +76,23 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             write_runtime_export(self.original, root/'one.fbmod')
-            first = (root/'ReSkate Effects Runtime.fbmod').read_bytes()
+            first = (root/(RUNTIME_NAME+'.fbmod')).read_bytes()
             write_runtime_export(self.original, root/'two.fbmod')
-            self.assertEqual((root/'ReSkate Effects Runtime.fbmod').read_bytes(), first)
+            self.assertEqual((root/(RUNTIME_NAME+'.fbmod')).read_bytes(), first)
             self.assertEqual((root/'one.fbmod').read_bytes(), (root/'two.fbmod').read_bytes())
+
+    def test_content_export_writes_only_the_deck_and_preserves_original(self):
+        from effects_runtime import write_content_export
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);target=root/'new.fbmod'
+            contract=write_content_export(self.original,target)
+            self.assertEqual(list(root.iterdir()),[target])
+            content=resources(target.read_bytes())
+            self.assertFalse(content.keys() & shared_keys())
+            self.assertIn('neon-mask',contract['runtime_features'])
+            before=target.read_bytes()
+            with self.assertRaises(FileExistsError):write_content_export(self.original,target)
+            self.assertEqual(target.read_bytes(),before)
 
     def test_failed_export_rolls_back_previously_committed_files(self):
         import os
@@ -96,7 +109,7 @@ class RuntimeTests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     write_runtime_export(self.original, destination, overwrite=True)
             self.assertEqual(destination.read_bytes(), b'previous export')
-            self.assertFalse((root/'ReSkate Effects Runtime.fbmod').exists())
+            self.assertFalse((root/(RUNTIME_NAME+'.fbmod')).exists())
             self.assertFalse(destination.with_suffix('.runtime.json').exists())
 
 

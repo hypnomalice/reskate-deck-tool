@@ -19,7 +19,7 @@ from app_version import APP_VERSION
 from tutorials import open_guide
 
 BG, FIELD, TEXT, MUTED = '#242629', '#33373d', '#e3e5e8', '#aeb4be'
-MODES = {'gif': 'Animated / GIF', 'classic': 'Lenticular', 'depth': 'Depth Map', 'layers': 'Foreground / Background', 'ghost': 'Ghost Rare'}
+MODES = {'gif': 'Animated / GIF', 'classic': 'Lenticular', 'depth': 'Depth Map', 'layers': 'Parallax (2–3 images)', 'ghost': 'Ghost Rare', 'metal':'Metallic Flakes', 'ink':'Ink Flow', 'window':'Impossible Window', 'liquid':'Liquid Bottle', 'neon':'Neon'}
 APP_NAME = 'ReSkate Deck Tool'
 QUOTES = [
     'shoutouts shwang',

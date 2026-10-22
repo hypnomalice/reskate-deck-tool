@@ -45,3 +45,21 @@ class LivePlacementTests(unittest.TestCase):
                     cached = image_placement.frame(image,fit,placement=settings)
                     file = image_placement.frame(path,fit,placement=settings)
                     self.assertEqual(cached.tobytes(),file.tobytes())
+
+    def test_neon_drag_preserves_mask_alpha(self):
+        art=Image.new('RGB',(40,160),'#245f9c')
+        mask=Image.new('RGBA',art.size,(255,255,255,0));deck=self.deck('neon')
+        deck['neon']=dict(selection='mask',brightness=1)
+        transparent=live_placement.render([art,mask],deck,0,art.size)
+        opaque=live_placement.render([art,Image.new('L',art.size,255)],deck,0,art.size)
+        self.assertGreater(sum(opaque.getpixel((20,80))),sum(transparent.getpixel((20,80))))
+
+    def test_multi_drag_reaches_extra_images(self):
+        with tempfile.TemporaryDirectory() as folder:
+            paths=[]
+            for i,colour in enumerate(('lime','white')):
+                path=Path(folder)/f'{i}.png';Image.new('RGB',(40,160),colour).save(path);paths.append(str(path))
+            deck=self.deck('classic');deck['extra_images']=paths
+            sources=[Image.new('RGB',(40,160),c) for c in ('red','blue')]
+            final=live_placement.render(sources,deck,1,(40,160)).getpixel((20,80))
+            self.assertGreater(min(final),240)

@@ -206,7 +206,9 @@ def build(decks,cas,title,author,*,independent_shader=False):
                     raw[32]=0
                     raw[33]=levels
                     struct.pack_into('<I',raw,36,0)
-                    struct.pack_into('<H',raw,20,struct.unpack_from('<H',raw,20)[0]|8)
+                    # Resident single-mip atlases use the proven non-streamed
+                    # header. Setting bit 8 makes these graphics load as wood.
+                    struct.pack_into('<H',raw,20,struct.unpack_from('<H',raw,20)[0]&~8)
                     raw=bytes(raw)
                 _,_,tail=descriptor_parts(bytearray.fromhex(ts[i]['descriptor']));rid=ridmap[u64(bytes.fromhex(ts[i]['descriptor']),tail+4)]
             elif i==3:raw=deck['thumb_small']

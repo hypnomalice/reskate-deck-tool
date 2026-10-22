@@ -3,6 +3,20 @@ from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
 
 GUIDES = {
+    'Neon': '''NEON
+
+Choose Neon, then load your board artwork. Select Mask PNG for precise control:
+white glows, black stays unlit, grey reduces glow. Transparent mask pixels stay
+unlit. Glow takes its colour from the artwork.
+
+Or select Pick a colour, choose the artwork colour to illuminate and adjust
+Colour tolerance. Neon brightness 100% matches the approved Neon C test.
+Preview glow is illustrative; the game controls exposure and bloom.
+
+All effect decks require SDEC: Sofis Deck Effect Core. Install one current copy:
+https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/
+For this local 1.4.0 build, use the matching SDEC FBMOD included in the package.
+''',
     'Animated GIF': '''ANIMATED GRAPHICS
 
 Select Animated GIF from Effect, then choose a GIF, animated PNG or animated WebP.
@@ -25,7 +39,7 @@ mods. Do not enable both an original mod and its updated copy together.
 ''',
     'Classic lenticular': '''CLASSIC LENTICULAR
 
-Choose Classic flip when you want two different pictures to change with the viewing angle.
+Choose Lenticular for two to eight pictures that change with the viewing angle. Use Choose pictures to load the set, then Move up / Move down to set its order. The first two image controls remain compatible with older projects.
 
 1. Select Image A and Image B. Matching 512 × 2048 PNGs are ideal.
 2. Align features you want to stay still, such as a central logo.

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 from PyInstaller.utils.hooks import collect_dynamic_libs
 import ispc_texcomp
 import PySide6
@@ -16,6 +17,12 @@ a = Analysis([str(root / 'Lenticular Deck Creator.pyw')],
     pathex=[str(root), str(engine)], binaries=collect_dynamic_libs('onnxruntime'),
     datas=data, hiddenimports=['onnxruntime.capi.onnxruntime_pybind11_state'],
     excludes=['pandas', 'matplotlib', 'onnxruntime.transformers', 'onnxruntime.quantization'])
+
+# Package only the selected runtime, not archived development shader payloads.
+runtime_files={'manifest.json'} | {r['file'] for r in json.loads((root/'assets/effects-runtime/manifest.json').read_text())}
+a.datas=[(dest,source,kind) for dest,source,kind in a.datas
+         if not dest.replace('\\','/').startswith('assets/effects-runtime/')
+         or Path(dest.replace('\\','/')).name in runtime_files]
 
 # Qt needs its matching C++ runtime; another image library can supply an older copy.
 qt = Path(PySide6.__file__).parent

@@ -60,7 +60,33 @@ class AtlasPreview:
         u = left + u * (right - left)
         v = top + v * (bottom - top)
         angle = float(np.clip(angle, -1, 1))
+        if self.mode in ('multi','neon'):
+            import advanced_atlas
+            return advanced_atlas.render(self,angle,u,v)
+        if self.mode=='liquid':
+            import liquid_atlas
+            return liquid_atlas.render(self,angle,u,v)
+        if self.mode in ('metal','ink','window'):
+            import finish_atlas
+            return finish_atlas.render(self,angle,u,v)
         phase = np.mod(u * 112, 1) - .5
+        if self.mode=='layers3':
+            depth=self.sample(.625,56/4096)
+            direction=-1 if self.motion[2]>.5 else 1
+            position=np.clip((angle+1)*3.5-phase*.4*self.settings[2],0,7)
+            movement=(position/3.5-1)*direction*self.motion[0]
+            coords=[u+movement*(float(d)-.5) for d in depth]
+            def plane(index,channel=None):
+                x=coords[index];inside=((x>=0)&(x<=1))[...,None]
+                x=np.clip(x,0,1)
+                if channel is not None:
+                    return self.sample(x,.75+v*.25)[...,channel:channel+1]*inside
+                offset,scale=((64/4096,960/4096),(.25,.25),(.5,.25))[index]
+                pixels=self.sample(x,offset+v*scale)
+                return pixels if index==2 else pixels*inside
+            foreground,middle,background=(plane(i) for i in range(3))
+            af,am=plane(0,0),plane(1,1)
+            return display(foreground+(middle+background*(1-am))*(1-af))
         if self.mode in ('smooth','ghost'):
             import smooth_effect
             return display(smooth_effect.render(self,angle,u,v))

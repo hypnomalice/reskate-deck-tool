@@ -15,7 +15,8 @@ import deck_archive
 from fbmod_compat import Archive, UnsupportedMod, compatible, pack
 
 ABI = 1
-RUNTIME_NAME = 'ReSkate Effects Runtime'
+FEATURES = ('three-plane-parallax', 'metallic-flakes', 'ink-flow', 'impossible-window','liquid-bottle','multi-image-lenticular','neon-mask')
+RUNTIME_NAME = 'SDEC - Sofis Deck Effect Core'
 COMPOSITOR = {
     (1, 'items/cust_board_stickers/skateboardstickercompositetextureset'),
     (1, 'characters/customization/board/loaders/cas_skateboard_sticker_compositor_prefab'),
@@ -105,6 +106,7 @@ def split_pack(data):
     runtime_archive = Archive(runtime)
     contract = {
         'runtime': RUNTIME_NAME, 'abi': ABI, 'decks': count,
+        'runtime_features': list(FEATURES),
         'content_sha256': hashlib.sha256(content).hexdigest(),
         'runtime_resources': [dict(kind=k, name=n) for k, n in sorted(
             runtime_archive.key(i) for i in range(len(runtime_archive.blobs)))],
@@ -176,4 +178,18 @@ def write_runtime_export(data, destination, *, overwrite=False):
                 else:
                     target.unlink()
             raise
+    return contract
+
+
+def write_content_export(data, destination, *, overwrite=False):
+    """Export only artwork/settings; SDEC is installed separately."""
+    target=Path(destination).resolve()
+    if target.exists() and not overwrite:raise FileExistsError('Choose another filename.')
+    content,_,contract=split_pack(data)
+    target.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.NamedTemporaryFile(prefix='.deck-',suffix='.partial',dir=target.parent,delete=False) as file:
+        temp=Path(file.name);file.write(content)
+    try:os.replace(temp,target)
+    finally:
+        if temp.exists():temp.unlink()
     return contract

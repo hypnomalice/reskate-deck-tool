@@ -140,8 +140,22 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
     with tempfile.TemporaryDirectory(prefix='lenticular-framing-') as scratch:
         for number, project in enumerate(projects):
             originals = project['images']
-            if Path(dest).resolve() in [Path(path).resolve() for path in originals if path]:
+            if project.get('mode','classic')=='classic':
+                extra=project.get('extra_images',[])
+                if len(extra)>6:raise ValueError('Lenticular supports up to eight pictures.')
+                framed=[]
+                for i,path in enumerate(extra):
+                    if Path(dest).resolve()==Path(path).resolve():raise ValueError('Choose a separate output file.')
+                    image=image_placement.frame(path,project.get('fit','Stretch'),project.get('background','#ffffff'),{})
+                    target=Path(scratch)/f'{number}-extra-{i}.png';image.save(target);framed.append(str(target))
+                project['extra_images']=framed
+            middle=project.get('middle_image') if project.get('mode') in ('layers','window') else None
+            if Path(dest).resolve() in [Path(path).resolve() for path in [*originals,middle] if path]:
                 raise ValueError('Choose a separate output file.')
+            if middle:
+                image=image_placement.frame(middle,project.get('fit','Stretch'),project.get('background','#ffffff'),project.get('middle_placement',{}),alpha=True)
+                target=Path(scratch)/f'{number}-middle.png';image.save(target)
+                project['middle_image']=str(target)
             if project.get('mode') == 'gif':
                 continue
             placements = project.get('placement')
@@ -152,10 +166,12 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
             if len(placements) != 2:
                 raise ValueError('Two image placements are required.')
             for index, path in enumerate(originals):
+                if not path and project.get('mode') in ('metal','neon') and index==1:
+                    continue
                 fit = background_fit if background_fit and index==1 else project.get('fit','Stretch')
                 image = image_placement.frame(path, fit, project.get('background','#ffffff'),
-                    placements[index], alpha=project.get('mode')=='layers' and index==0,
-                    depth=project.get('mode') in ('depth','ghost') and index==1)
+                    placements[index], alpha=(project.get('mode') in ('layers','window','liquid') and index==0) or (project.get('mode')=='neon' and index==1),
+                    depth=project.get('mode') in ('depth','ghost','ink') and index==1)
                 target = Path(scratch)/f'{number}-{index}.png'
                 image.save(target)
                 project['images'][index] = str(target)
@@ -176,11 +192,41 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         names.add(name.casefold())
         a,b=project['images'];fit=project.get('fit','Stretch');background=project.get('background','#ffffff');custom=project.get('thumbnail')
         mode=project.get('mode','classic')
-        if mode not in ['classic','depth','layers','gif','ghost']:raise ValueError('Unsupported deck mode.')
+        if mode not in ['classic','depth','layers','gif','ghost','metal','ink','window','liquid','neon']:raise ValueError('Unsupported deck mode.')
         if fit not in ['Stretch','Crop to fill','Fit entire image']:raise ValueError('Choose a supported image sizing option.')
         if dest in [Path(p).resolve() for p in [a,b,custom] if p]+[(ROOT/'engine/template.fbmod').resolve()]:raise ValueError('Choose a separate output file.')
         progress(f'Deck {number} of {len(projects)}: {name}')
-        if mode == 'gif':
+        if mode=='neon':
+            import advanced_atlas
+            graphic=artwork(a,fit,background)
+            mask=depth_views.layer_image(b,fit) if b else None
+            packed=advanced_atlas.neon_pack(graphic,mask,project.get('neon'))
+            texture=encode(packed,progress,mipmaps=False)
+            thumb=thumbnail(graphic,graphic,custom,background=background,label='NEON')
+        elif mode=='classic' and project.get('extra_images'):
+            import advanced_atlas
+            pictures=[artwork(path,fit,background) for path in [a,b,*project['extra_images']]]
+            packed=advanced_atlas.multi_pack(pictures)
+            texture=encode(packed,progress,mipmaps=False)
+            thumb=thumbnail(pictures[0],pictures[-1],custom,background=background,label=f'{len(pictures)} PICTURES')
+        elif mode=='liquid':
+            import liquid_atlas
+            from effect_preview import AtlasPreview
+            packed=liquid_atlas.pack(depth_views.layer_image(a,fit),artwork(b,fit,background),project.get('liquid'))
+            texture=encode(packed,progress,mipmaps=False)
+            preview=AtlasPreview(packed,'liquid')
+            thumb=thumbnail(preview.render(-.4,(256,1024)),preview.render(.4,(256,1024)),custom,background=background,label='LIQUID')
+        elif mode in ('metal','ink','window'):
+            import finish_atlas
+            from effect_preview import AtlasPreview
+            graphic=depth_views.layer_image(a,fit) if mode=='window' else artwork(a,fit,background)
+            second=(depth_views.depth_image(b,fit) if mode=='ink' else artwork(b,fit,background)) if mode!='metal' else None
+            obj=depth_views.layer_image(project['middle_image'],fit) if mode=='window' and project.get('middle_image') else None
+            packed=finish_atlas.pack(mode,graphic,second,obj)
+            texture=encode(packed,progress,mipmaps=False)
+            preview=AtlasPreview(packed,mode)
+            thumb=thumbnail(preview.render(-.4,(256,1024)),preview.render(.4,(256,1024)),custom,background=background,label={'metal':'METALLIC','ink':'INK FLOW','window':'WINDOW'}[mode])
+        elif mode == 'gif':
             clip=animation.load(a)
             packed,metadata=animation_texture.atlas(clip,background=background,placement=(project.get('placement') or [{}])[0],quality=project.get('animation',{}).get('quality',1))
             texture=encode(packed,progress,profile='fast',mipmaps=False)
@@ -194,8 +240,16 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
                 strength=settings.get('strength',.08)
                 motion=settings.get('convergence',.5)
                 reverse=settings.get('invert',False)
-                texture=encode(layer_atlas.pack(front,back,strength,motion,settings.get('bands',.25) if project.get('lenticular',True) else 0,reverse),progress)
-                views=depth_views.layer_views(front,back,strength,motion,reverse,progress,view_count=2)
+                lens=settings.get('bands',.25) if project.get('lenticular',True) else 0
+                if project.get('middle_image'):
+                    middle=depth_views.layer_image(project['middle_image'],fit)
+                    packed=layer_atlas.pack_three(front,middle,back,strength,project.get('layer_depths',(.1,.45,.9)),lens,reverse)
+                    texture=encode(packed,progress,mipmaps=False)
+                    from effect_preview import AtlasPreview
+                    preview=AtlasPreview(packed,'layers3');views=[preview.render(a,(256,1024)) for a in (-1,1)]
+                else:
+                    texture=encode(layer_atlas.pack(front,back,strength,motion,lens,reverse),progress)
+                    views=depth_views.layer_views(front,back,strength,motion,reverse,progress,view_count=2)
             else:
                 image=artwork(a,fit,background)
                 depth=depth_views.depth_image(b,fit,invert=settings.get('invert',False))
@@ -223,8 +277,8 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             tinted=Image.merge('RGB',tuple(grain.point([min(255,round(value/average*channel*intensity)) for value in range(256)]) for channel in colour))
             progress('Preparing wood colour texture…')
             wood=b''.join(encode_thumbnail(tinted.resize((max(4,1024>>level),max(4,2048>>level)),Image.Resampling.LANCZOS)) for level in range(12))
-        continuous=mode=='ghost' or (mode=='depth' and not project.get('lenticular',True))
-        decks.append(dict(name=name,mode='depth' if mode=='layers' else 'classic' if mode in ('gif','ghost') else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' or continuous else None,resident=mode=='gif' or continuous,wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
+        continuous=mode in ('ghost','metal','ink','window','liquid','neon') or (mode=='classic' and bool(project.get('extra_images'))) or (mode=='depth' and not project.get('lenticular',True)) or (mode=='layers' and bool(project.get('middle_image')))
+        decks.append(dict(name=name,mode='depth' if mode=='layers' or (mode=='classic' and project.get('extra_images')) else 'classic' if mode in ('gif','ghost','metal','ink','window','liquid','neon') else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' or continuous else None,resident=mode=='gif' or continuous,wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
     result=deck_archive.build(decks,raw_cas,title,author.strip(),independent_shader=True)
     check_head,check_blobs=split_mod(result)
     assert len(check_blobs)==14*len(projects)+13+2*int(any(d.get('resident') for d in decks))+3*sum(bool(p.get('wood_tint')) for p in projects)
@@ -233,9 +287,9 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     result, _ = compatible(result)
     dest.parent.mkdir(parents=True,exist_ok=True)
     if shared_runtime:
-        from effects_runtime import write_runtime_export
-        progress('Separating artwork from the shared effects runtime…')
-        write_runtime_export(result,dest,overwrite=True)
+        from effects_runtime import write_content_export
+        progress('Preparing SDEC deck content…')
+        write_content_export(result,dest,overwrite=True)
         progress('Export complete.');return dest
     temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
     progress('Export complete.');return dest

@@ -16,12 +16,23 @@ def check(folder, projects):
         deck.update(copy.deepcopy(project))
         window.decks.append(deck)
     layers = copy.deepcopy(window.decks[0])
-    layers.update(mode='layers',name='Layers interface check')
+    layers.update(mode='layers',name='Layers interface check',middle_image=projects[0]['images'][0])
     window.decks.append(layers)
     for mode in ('ghost','depth'):
         smooth=copy.deepcopy(window.decks[1])
         smooth.update(mode=mode,lenticular=False,name=f'{mode} smooth interface check')
         window.decks.append(smooth)
+    for mode in ('metal','ink','window','liquid'):
+        deck=copy.deepcopy(window.decks[0])
+        deck.update(mode=mode,name=f'{mode} interface check')
+        if mode=='metal':deck['images']=[deck['images'][0],None]
+        if mode=='window':deck['middle_image']=projects[0]['images'][0]
+        window.decks.append(deck)
+    for mode in ('neon','classic'):
+        deck=copy.deepcopy(window.decks[0]);deck.update(mode=mode,name=mode+' new interface check')
+        if mode=='neon':deck['neon']=dict(selection='mask',brightness=1)
+        else:deck['extra_images']=projects[0]['images']
+        window.decks.append(deck)
     modes = []
     try:
         for index in range(len(window.decks)):
@@ -34,6 +45,18 @@ def check(folder, projects):
                 if time.monotonic()-start>15:
                     raise AssertionError(window.status.text())
             assert window.board.frame is not None
+            if window.current()['mode']=='layers':
+                assert window.renderer.mode=='layers3'
+                assert window.placement_choice.count()==3
+                assert all(c.isVisible() for c in window.layer_depth_controls)
+            if window.current()['mode']=='liquid':
+                assert window.renderer.mode=='liquid'
+                assert all(c.isVisible() for c in (window.liquid_colour,window.liquid_cloud,window.liquid_depth,window.liquid_amount,window.liquid_thickness))
+                window.liquid_amount.spin.setValue(73)
+                window.liquid_cloud.spin.setValue(42)
+                window.liquid_thickness.spin.setValue(66)
+                cfg=window.workspace()['decks'][index]['liquid']
+                assert cfg['amount']==.73 and cfg['cloudiness']==.42 and cfg['thickness']==.66
             modes.append(window.current()['mode'])
             window.grab().save(str(Path(folder)/f'Cutroom-{window.current()["mode"]}.png'))
         window.selected = 1
@@ -42,7 +65,7 @@ def check(folder, projects):
         window.strength.spin.setValue(12)
         assert window.strength.slider.value()==12
         assert window.workspace()['decks'][1]['depth']['strength']==.12
-        assert window.tabs.count()==len(projects)+3
+        assert window.tabs.count()==len(projects)+9
         start = time.monotonic()
         while window.renderer is None:
             app.processEvents()
