@@ -1,4 +1,4 @@
-# ReSkate Deck Tool 1.4.0
+# ReSkate Deck Tool 1.4.1
 
 Create Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
 
@@ -9,6 +9,10 @@ Effect decks require [SDEC: Sofis Deck Effect Core](https://thunderstore.io/c/re
 Use SDEC 1.2.0 or newer for Neon and multi-picture lenticular. The matching core is supplied separately from the tool. No custom game DLL is required.
 
 ## New controls
+
+- Preview placement now uses the standard deck's measured artwork UV coverage instead of stretching the complete image over the visible board. The shader header is already handled by the renderer; it is not applied twice. Existing image positions and exported artwork are unchanged.
+- Switch the deck preview between **2D** and **3D**. Both use the same corrected artwork mapping. Drag the 3D view to orbit; double-click to reset. The enlarged preview follows the selected view.
+- The 3D shape is a procedural standard-deck approximation. Other custom shapes and in-game lighting can differ. This update adds no new SDEC experimental effects and requires no new game DLL or core update.
 
 - Lenticular: choose 2–8 pictures. Move pictures up/down to set their viewing order. Original lens-strip transitions are retained; old two-image projects still open.
 - Neon: load artwork and a glow mask PNG. White glows, black stays unlit, grey reduces glow. Transparent mask pixels stay unlit. Glow takes its colour from the artwork.

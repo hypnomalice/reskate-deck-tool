@@ -90,7 +90,19 @@ def check(folder, projects):
                 assert adjustment.rect().contains(adjustment.spin.geometry())
             window.grab().save(str(Path(folder)/f'Cutroom-layout-{size[0]}x{size[1]}.png'))
         assert not window.windowIcon().isNull()
-        return dict(frontend='Cutroom / Qt',preview_modes=modes,sliders=True,responsive_layout=True)
+        window.view_mode.setCurrentText('3D')
+        app.processEvents()
+        assert window.board.view_mode=='3D'
+        window.grab().save(str(Path(folder)/'preview-3d.png'))
+        window.enlarge()
+        app.processEvents()
+        assert window.large_board.view_mode=='3D'
+        window.view_mode.setCurrentText('2D')
+        app.processEvents()
+        assert window.board.view_mode==window.large_board.view_mode=='2D'
+        window.large.close()
+        return dict(frontend='Cutroom / Qt',preview_modes=modes,sliders=True,responsive_layout=True,
+                    view_switch=True,standard_deck_uv_mapping=True)
     finally:
         window.baseline = window.workspace()
         window.close()

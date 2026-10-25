@@ -24,6 +24,7 @@ import animation_texture
 import image_placement
 import preview_depth
 import live_placement
+import board_preview
 from effect_preview import AtlasPreview
 from app_version import APP_VERSION
 from studio_ui import MODES, QUOTES, APP_NAME
@@ -135,12 +136,40 @@ class Board(QWidget):
         self.frame = None
         self.wood = '#9a7855'
         self.guides = True
+        self.view_mode = '2D'
+        self.yaw, self.pitch = -22., 24.
+        self.drag_position = None
         self.setMinimumSize(250,180)
+
+    def mousePressEvent(self,event):
+        if self.view_mode=='3D' and event.button()==Qt.LeftButton:
+            self.drag_position=event.position()
+            event.accept()
+
+    def mouseMoveEvent(self,event):
+        if self.drag_position is not None:
+            delta=event.position()-self.drag_position
+            self.drag_position=event.position()
+            self.yaw=max(-70.,min(70.,self.yaw+delta.x()*.4))
+            self.pitch=max(-65.,min(65.,self.pitch+delta.y()*.3))
+            self.update()
+
+    def mouseReleaseEvent(self,event):
+        self.drag_position=None
+
+    def mouseDoubleClickEvent(self,event):
+        self.yaw,self.pitch=-22.,24.
+        self.update()
 
     def paintEvent(self,event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.fillRect(self.rect(),QColor('#191c20'))
+        if self.view_mode=='3D' and self.frame is not None:
+            from board_view import draw_3d
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            draw_3d(painter,self)
+            return
         h = min(self.height()-30,(self.width()-45)*4)
         w = h/4
         area = QRectF((self.width()-w)/2,(self.height()-h)/2,w,h)
@@ -613,6 +642,11 @@ class Creator(QMainWindow):
         self.preview_title = QLabel('Deck preview')
         row.addWidget(self.preview_title)
         row.addStretch()
+        self.view_mode = QComboBox()
+        self.view_mode.addItems(['2D','3D'])
+        self.view_mode.setToolTip('Both views use the standard deck artwork mapping. 3D is a procedural shape preview, not game lighting. Drag to orbit; double-click to reset.')
+        self.view_mode.currentTextChanged.connect(self.preview_view_changed)
+        row.addWidget(self.view_mode)
         button('Enlarge…',self.enlarge,row)
         right.addLayout(row)
         row = QHBoxLayout()
@@ -1233,6 +1267,7 @@ class Creator(QMainWindow):
             return
         self.last_key = key
         self.preview_title.setText('Deck preview · positioning' if self.live_placement and not self.clip else 'Deck preview')
+        image = board_preview.map_artwork(image)
         pixmap = QPixmap.fromImage(qt_image(image))
         self.board.frame = pixmap
         self.board.update()
@@ -1255,6 +1290,13 @@ class Creator(QMainWindow):
         self.board.update()
         if self.large:
             self.large_board.guides = value
+            self.large_board.update()
+
+    def preview_view_changed(self,value):
+        self.board.view_mode=value
+        self.board.update()
+        if self.large:
+            self.large_board.view_mode=value
             self.large_board.update()
 
     def wood_changed(self,*args):
@@ -1379,6 +1421,8 @@ class Creator(QMainWindow):
         dialog.resize(620,920)
         layout = QVBoxLayout(dialog)
         self.large_board = Board()
+        self.large_board.view_mode = self.view_mode.currentText()
+        self.large_board.yaw,self.large_board.pitch = self.board.yaw,self.board.pitch
         self.large_board.guides = self.guides.isChecked()
         self.large_board.wood = self.board.wood
         layout.addWidget(self.large_board,1)
@@ -1386,7 +1430,7 @@ class Creator(QMainWindow):
         angle.changed.connect(lambda value:self.angle.spin.setValue(value))
         self.angle.changed.connect(angle.set_value)
         layout.addWidget(angle)
-        layout.addWidget(QLabel('Note: may not reflect 1:1 in game'))
+        layout.addWidget(QLabel('Standard deck mapping · shape and lighting are approximate'))
         self.large = dialog
         dialog.finished.connect(self.close_enlarged)
         dialog.show()
