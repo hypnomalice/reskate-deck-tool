@@ -6,7 +6,7 @@ Create Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 i
 
 Effect decks require [SDEC: Sofis Deck Effect Core](https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/). Enable one current copy alongside your artwork packs. New tool exports contain the deck content only.
 
-Use SDEC 1.2.0 or newer for Neon and multi-picture lenticular. The matching core is supplied separately from the tool. No custom game DLL is required.
+Use SDEC 1.2.0 or newer for Neon and multi-picture lenticular. Install the core separately from Thunderstore; the tool does not download it. No custom game DLL is required.
 
 ## Thumbnail correction
 
@@ -31,7 +31,7 @@ Private Studio source and game binaries are excluded.
 
 Silver and holo have independent area controls: **Whole board**, **Mask PNG**, or **Pick a colour**. For masks, white applies the finish, black keeps the original artwork, and grey/alpha softens the finish. Use a mask aligned with the full source artwork; it follows the artwork fit and placement. Colour selection uses the placed artwork and the tolerance slider. Outside both selected areas, the original colour artwork remains visible with the depth effect.
 
-Existing projects keep whole-board finishes. Selected areas require the updated SDEC core distributed with 1.4.2. Do not enable two copies of the core together. No custom game DLL is needed.
+Existing projects keep whole-board finishes. Selected areas require SDEC core **1.3.0**, installed separately from Thunderstore. The tool does not download or bundle the core. Do not enable two copies of the core together. No custom game DLL is needed.
 
 ## Source
 

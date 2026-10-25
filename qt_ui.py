@@ -747,7 +747,7 @@ class Creator(QMainWindow):
             colour_button=QPushButton('Choose artwork colour...');colour_button.clicked.connect(lambda checked=False,k=kind:self.choose_ghost_colour(k));ghost_form.addRow('',colour_button)
             tolerance=Adjustment('Colour tolerance',15,0,100,tip='Include artwork colours near the selected colour.');tolerance.changed.connect(self.changed);ghost_form.addRow('',tolerance)
             self.ghost_area_controls[kind]=(method,mask_button,mask_name,colour_button,tolerance)
-        ghost_help=QLabel('White mask areas receive the finish; black stays as artwork. Grey softens it. Silver and holo are independent. Requires the SDEC core supplied with 1.4.2.')
+        ghost_help=QLabel('White mask areas receive the finish; black stays as artwork. Grey softens it. Silver and holo are independent. Requires SDEC core 1.3.0 from Thunderstore.')
         ghost_help.setWordWrap(True);ghost_help.setMinimumHeight(100);ghost_form.addRow(ghost_help);effects.addWidget(self.ghost_box)
         self.liquid_colour=button('Liquid colour…',self.choose_liquid_colour,effects)
         self.liquid_cloud=Adjustment('Cloudiness',15,0,100,tip='Clear to cloudy. Softens the background through liquid; the front PNG stays sharp.')
