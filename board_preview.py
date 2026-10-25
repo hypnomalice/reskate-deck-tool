@@ -1,4 +1,4 @@
-"""Preview-only calibration for the standard donor deck. Never alters exports."""
+"""Visible-artwork calibration for previews and automatic deck thumbnails."""
 import math
 from PIL import Image
 

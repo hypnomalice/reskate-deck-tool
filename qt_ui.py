@@ -221,7 +221,7 @@ class DetailImage(QWidget):
 
 def default_deck(name='My Deck'):
     return dict(version=7,name=name,mode='gif',lenticular=False,author='',images=[None,None],fit='Stretch',
-        extra_images=[],neon=dict(selection='mask',colour='#00dfff',tolerance=.15,brightness=1),middle_image=None,middle_placement=dict(zoom=1,x=0,y=0),layer_depths=[.1,.45,.9],
+        extra_images=[],ghost={kind:dict(selection='all',mask=None,colour='#ffffff',tolerance=.15) for kind in ('silver','holo')},neon=dict(selection='mask',colour='#00dfff',tolerance=.15,brightness=1),middle_image=None,middle_placement=dict(zoom=1,x=0,y=0),layer_depths=[.1,.45,.9],
         background_fit='Crop to fill',background='#ffffff',thumbnail=None,
         placement=[dict(zoom=1,x=0,y=0),dict(zoom=1,x=0,y=0)],
         depth=dict(strength=.04,convergence=.5,bands=1,invert=False),
@@ -326,6 +326,8 @@ class Creator(QMainWindow):
                 deck['middle_image']=str((Path(path).parent/deck['middle_image']).resolve())
             if deck.get('thumbnail'):
                 deck['thumbnail'] = str((Path(path).parent/deck['thumbnail']).resolve())
+            for cfg in deck.get('ghost',{}).values():
+                if cfg.get('mask'):cfg['mask']=str((Path(path).parent/cfg['mask']).resolve())
             normalized.append(deck)
         self.decks = normalized
         self.selected = max(0,min(data.get('selected',0),len(decks)-1))
@@ -336,7 +338,7 @@ class Creator(QMainWindow):
 
     def set_busy(self,busy):
         self.busy = busy
-        for widget in (self.settings,self.tabs,self.add_button,self.export_button,self.pack_button,self.strength,self.bands,self.convergence,self.invert,self.placement,*self.layer_depth_controls):
+        for widget in (self.settings,self.tabs,self.add_button,self.export_button,self.pack_button,self.strength,self.bands,self.convergence,self.invert,self.placement,self.ghost_box,*self.layer_depth_controls):
             widget.setEnabled(not busy)
         if not busy:
             self.update_mode()
@@ -735,6 +737,18 @@ class Creator(QMainWindow):
         self.neon_tolerance=Adjustment('Colour tolerance',15,0,100,tip='Include colours close to the selected glow colour.')
         self.neon_brightness=Adjustment('Neon brightness',100,0,100,tip='100% matches the approved Neon C test. Black areas of the mask never glow.')
         for control in (self.neon_tolerance,self.neon_brightness):effects.addWidget(control);control.changed.connect(self.changed)
+        self.ghost_box=QGroupBox('Ghost Rare finish areas')
+        ghost_form=QFormLayout(self.ghost_box);self.ghost_area_controls={}
+        for kind,title in (('silver','Silver'),('holo','Holo')):
+            method=QComboBox();method.addItems(['Whole board','Mask PNG','Pick a colour'])
+            method.currentIndexChanged.connect(self.changed);ghost_form.addRow(title+' area',method)
+            mask_button=QPushButton('Choose '+kind+' mask...');mask_button.clicked.connect(lambda checked=False,k=kind:self.choose_ghost_mask(k));ghost_form.addRow('',mask_button)
+            mask_name=QLabel();mask_name.setWordWrap(True);ghost_form.addRow('',mask_name)
+            colour_button=QPushButton('Choose artwork colour...');colour_button.clicked.connect(lambda checked=False,k=kind:self.choose_ghost_colour(k));ghost_form.addRow('',colour_button)
+            tolerance=Adjustment('Colour tolerance',15,0,100,tip='Include artwork colours near the selected colour.');tolerance.changed.connect(self.changed);ghost_form.addRow('',tolerance)
+            self.ghost_area_controls[kind]=(method,mask_button,mask_name,colour_button,tolerance)
+        ghost_help=QLabel('White mask areas receive the finish; black stays as artwork. Grey softens it. Silver and holo are independent. Requires the SDEC core supplied with 1.4.2.')
+        ghost_help.setWordWrap(True);ghost_help.setMinimumHeight(100);ghost_form.addRow(ghost_help);effects.addWidget(self.ghost_box)
         self.liquid_colour=button('Liquid colour…',self.choose_liquid_colour,effects)
         self.liquid_cloud=Adjustment('Cloudiness',15,0,100,tip='Clear to cloudy. Softens the background through liquid; the front PNG stays sharp.')
         self.liquid_depth=Adjustment('Liquid depth',42,0,100,tip='Thickness of the sealed liquid chamber. The middle setting matches the approved test.')
@@ -788,6 +802,9 @@ class Creator(QMainWindow):
             depth=dict(strength=self.strength.value()/100,convergence=self.convergence.value()/100,bands=self.bands.value()/100,invert=self.invert.isChecked()),
             animation=dict(quality=(1,2,4)[self.quality.currentIndex()]),wood_tint=d.get('wood_colour',d.get('wood_tint') or '#b98a56') if self.wood_mode.currentIndex() else None,wood_intensity=self.intensity.value()/100)
         d['neon']=dict(selection='colour' if self.neon_method.currentIndex() else 'mask',colour=d.get('neon',{}).get('colour','#00dfff'),tolerance=self.neon_tolerance.value()/100,brightness=self.neon_brightness.value()/100)
+        for kind,(method,mask_button,mask_name,colour_button,tolerance) in self.ghost_area_controls.items():
+            cfg=d.setdefault('ghost',{}).setdefault(kind,{})
+            cfg.update(selection=('all','mask','colour')[method.currentIndex()],tolerance=tolerance.value()/100)
         d['layer_depths']=[control.value()/100 for control in self.layer_depth_controls]
         d['liquid']=dict(colour=d.get('liquid',{}).get('colour','#9630d8'),cloudiness=self.liquid_cloud.value()/100,depth=.025+.155*self.liquid_depth.value()/100,amount=self.liquid_amount.value()/100,thickness=self.liquid_thickness.value()/100)
 
@@ -822,6 +839,10 @@ class Creator(QMainWindow):
         self.neon_method.setCurrentIndex(1 if neon.get('selection')=='colour' else 0)
         self.neon_tolerance.set_value(neon.get('tolerance',.15)*100)
         self.neon_brightness.set_value(neon.get('brightness',1)*100)
+        for kind,(method,mask_button,mask_name,colour_button,tolerance) in self.ghost_area_controls.items():
+            cfg=d.get('ghost',{}).get(kind,{})
+            method.setCurrentIndex({'all':0,'mask':1,'colour':2}.get(cfg.get('selection','all'),0))
+            tolerance.set_value(cfg.get('tolerance',.15)*100)
         liquid=d.get('liquid',{})
         self.liquid_cloud.set_value(liquid.get('cloudiness',.15)*100)
         self.liquid_depth.set_value((liquid.get('depth',.09)-.025)/.155*100)
@@ -881,6 +902,12 @@ class Creator(QMainWindow):
         self.bands.setVisible(mode in ('depth','layers') and self.lenticular.isChecked())
         for w in (self.strength,self.convergence,self.invert):
             w.setVisible(mode not in ('classic','metal','ink','window','liquid','neon') and not (three and w==self.convergence))
+        self.ghost_box.setVisible(mode=='ghost')
+        for kind,(method,mask_button,mask_name,colour_button,tolerance) in self.ghost_area_controls.items():
+            cfg=self.current().get('ghost',{}).get(kind,{})
+            mask_button.setVisible(method.currentIndex()==1);mask_name.setVisible(method.currentIndex()==1)
+            mask_name.setText(Path(cfg['mask']).name if cfg.get('mask') else 'No mask selected')
+            colour_button.setVisible(method.currentIndex()==2);tolerance.setVisible(method.currentIndex()==2)
         for control in (self.liquid_colour,self.liquid_cloud,self.liquid_depth,self.liquid_amount,self.liquid_thickness):control.setVisible(mode=='liquid')
         self.finish_hint.setVisible(mode in ('classic','metal','ink','window','liquid','neon'))
         self.finish_hint.setText({'classic':'Choose two to eight pictures, then use Move up / Move down to set their viewing order. Fine lens bands and slight overlap match the original lenticular effect.',
@@ -896,6 +923,17 @@ class Creator(QMainWindow):
         self.placement_choice.setEnabled(mode not in ('depth','ghost','gif','neon'))
         if mode in ('depth','ghost','gif','neon'):
             self.placement_choice.setCurrentIndex(0)
+
+    def choose_ghost_mask(self,kind):
+        path,_=QFileDialog.getOpenFileName(self,'Choose '+kind+' finish mask',filter='Mask images (*.png *.webp *.tif *.tiff *.bmp)')
+        if path:
+            self.current().setdefault('ghost',{}).setdefault(kind,{})['mask']=path
+            self.changed()
+
+    def choose_ghost_colour(self,kind):
+        cfg=self.current().setdefault('ghost',{}).setdefault(kind,{})
+        colour=QColorDialog.getColor(QColor(cfg.get('colour','#ffffff')),self,'Choose artwork colour for '+kind)
+        if colour.isValid():cfg['colour']=colour.name();self.changed()
 
     def choose_neon_colour(self):
         colour=QColorDialog.getColor(QColor(self.current().get('neon',{}).get('colour','#00dfff')),self,'Choose artwork colour to glow')
@@ -1099,9 +1137,11 @@ class Creator(QMainWindow):
                         thumbs=[preview.render(a,(128,512)) for a in (-.4,.4)]
                     elif d['mode']=='ghost' or (d['mode']=='depth' and not d.get('lenticular',True)):
                         import smooth_effect
-                        atlas=smooth_effect.pack(*images,strength,convergence,d['mode']=='ghost')
+                        atlas=smooth_effect.pack(*images,strength,convergence,d['mode']=='ghost',d.get('ghost'),d['fit'],d['placement'][0])
                         thumbs=images
                         preview_mode='ghost' if d['mode']=='ghost' else 'smooth'
+                        if d['mode']=='ghost':
+                            ghost_preview=AtlasPreview(atlas,'ghost');thumbs=[ghost_preview.render(a,(128,512)) for a in (-.4,.4)]
                     elif d['mode']=='depth':
                         views = preview_depth.views(*images,strength,convergence,progress)
                         atlas = engine.depth_views.pack(views,bands,balanced=True)

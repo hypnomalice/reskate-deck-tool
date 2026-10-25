@@ -15,7 +15,7 @@ import deck_archive
 from fbmod_compat import Archive, UnsupportedMod, compatible, pack
 
 ABI = 1
-FEATURES = ('three-plane-parallax', 'metallic-flakes', 'ink-flow', 'impossible-window','liquid-bottle','multi-image-lenticular','neon-mask')
+FEATURES = ('three-plane-parallax', 'metallic-flakes', 'ink-flow', 'impossible-window','liquid-bottle','multi-image-lenticular','neon-mask','ghost-finish-areas')
 RUNTIME_NAME = 'SDEC - Sofis Deck Effect Core'
 COMPOSITOR = {
     (1, 'items/cust_board_stickers/skateboardstickercompositetextureset'),

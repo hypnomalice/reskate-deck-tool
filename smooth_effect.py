@@ -4,11 +4,18 @@ from PIL import Image, ImageDraw
 import layer_atlas
 
 
-def pack(image, depth, strength=.075, convergence=.5, ghost=False):
+def pack(image, depth, strength=.075, convergence=.5, ghost=False, areas=None, mask_fit="Stretch", mask_placement=None):
     from creator_engine import atlas
     values=np.asarray(depth.convert('L'),dtype=np.float32)/255
     encoded=np.rint(np.where(values<=.0031308,values*12.92,1.055*values**(1/2.4)-.055)*255).astype('uint8')
-    mask=np.stack((np.full_like(encoded,255),encoded,np.full_like(encoded,255)),axis=-1)
+    silver=holo=np.ones_like(values)
+    if ghost and areas:
+        from ghost_areas import coverage
+        silver=coverage(image,areas.get('silver'),mask_fit,mask_placement,label='silver')
+        holo=coverage(image,areas.get('holo'),mask_fit,mask_placement,label='holo')
+    def encode_area(value):
+        return np.rint(np.clip(np.where(value<=.0031308,value*12.92,1.055*value**(1/2.4)-.055),0,1)*255).astype('uint8')
+    mask=np.stack((encode_area(silver),encoded,encode_area(holo)),axis=-1)
     result=atlas(image,Image.fromarray(mask),background='#000000')
     draw=ImageDraw.Draw(result)
     draw.rectangle((0,48,127,63),fill=(128 if ghost else 64,0,255))
@@ -32,7 +39,10 @@ def render(renderer, angle, u, v):
     dx=depth(source+.004,.5+v*.5,1)-depth(source-.004,.5+v*.5,1)
     dy=depth(source,.5+v*.5+.001,1)-depth(source,.5+v*.5-.001,1)
     orientation=12*dx+8*dy+angle*2.4
-    coverage=np.clip(1-np.abs(orientation)*.65,0,1)**2
+    silver_area=depth(source,.5+v*.5,0)
+    holo_area=depth(source,.5+v*.5,2)
+    coverage=np.clip(1-np.abs(orientation)*.65,0,1)**2*holo_area
     phase=(orientation+height*3)*2.4
     colour=np.sin(phase[...,None]+np.arange(3)*2.0943951)*.1
-    return silver[...,None]+coverage[...,None]*(.1+colour)
+    base=rgb+(silver[...,None]-rgb)*silver_area[...,None]
+    return base+coverage[...,None]*(.1+colour)

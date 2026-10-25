@@ -10,6 +10,7 @@ import depth_views
 import layer_atlas
 import animation
 import animation_texture
+from board_preview import map_artwork
 
 def artwork(path, fit="Stretch", background="#ffffff"):
     if isinstance(path,Image.Image):return path.convert('RGB').resize((512,2048),Image.Resampling.LANCZOS)
@@ -40,7 +41,7 @@ def thumbnail(a,b,custom=None,fit="Stretch",background="#ffffff",size=768,label=
     left=(size-width*2-gap)//2
     mask=Image.new('L',(width,height));ImageDraw.Draw(mask).rounded_rectangle((0,0,width-1,height-1),radius=width//2,fill=255)
     for i,path in enumerate([a,b]):
-        graphic=artwork(path,fit,background).resize((width,height),Image.Resampling.LANCZOS).convert('RGBA')
+        graphic=map_artwork(artwork(path,fit,background),(width,height)).convert('RGBA')
         graphic.putalpha(mask);out.alpha_composite(graphic,(left+i*(width+gap),top))
     font_size=max(6,round(size*.061))
     try:font=ImageFont.truetype('C:/Windows/Fonts/segoeuib.ttf',font_size)
@@ -158,6 +159,14 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
                 project['middle_image']=str(target)
             if project.get('mode') == 'gif':
                 continue
+            if project.get('mode')=='ghost':
+                for finish in ('silver','holo'):
+                    cfg=project.get('ghost',{}).get(finish,{})
+                    if cfg.get('selection')=='mask' and cfg.get('mask'):
+                        if Path(dest).resolve()==Path(cfg['mask']).resolve():raise ValueError('Choose a separate output file.')
+                        placement=(project.get('placement') or [{}])[0]
+                        mask=image_placement.frame(cfg['mask'],project.get('fit','Stretch'),'#000000',placement,alpha=True)
+                        target=Path(scratch)/f'{number}-ghost-{finish}.png';mask.save(target);cfg['mask']=str(target)
             placements = project.get('placement')
             background_fit = project.get('background_fit') if project.get('mode')=='layers' else None
             if not background_fit and (not placements or all(all(float(p.get(k,d)) == d for k,d in [('zoom',1),('x',0),('y',0)]) for p in placements)):
@@ -255,9 +264,12 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
                 depth=depth_views.depth_image(b,fit,invert=settings.get('invert',False))
                 if mode=='ghost' or not project.get('lenticular',True):
                     import smooth_effect
-                    packed=smooth_effect.pack(image,depth,settings.get('strength',.075),settings.get('convergence',.5),mode=='ghost')
+                    packed=smooth_effect.pack(image,depth,settings.get('strength',.075),settings.get('convergence',.5),mode=='ghost',project.get('ghost'))
                     texture=encode(packed,progress,mipmaps=False)
-                    views=[image,image]
+                    if mode=='ghost':
+                        from effect_preview import AtlasPreview
+                        preview=AtlasPreview(packed,'ghost');views=[preview.render(a,(256,1024)) for a in (-.4,.4)]
+                    else:views=[image,image]
                 else:
                     views=depth_views.views(image,depth,settings.get('strength',.04),settings.get('convergence',.5),progress)
                     texture=encode(depth_views.pack(views,settings.get('bands',1),balanced=True),progress)
