@@ -101,8 +101,25 @@ def check(folder, projects):
         app.processEvents()
         assert window.board.view_mode==window.large_board.view_mode=='2D'
         window.large.close()
+        window.close_placement()
+        window.selected = 0
+        window.apply_deck()
+        start = time.monotonic()
+        while window.renderer is None or window.display_revision != window.revision:
+            app.processEvents(); time.sleep(.005)
+            if time.monotonic()-start>30: raise AssertionError(window.status.text())
+        window.view_mode.setCurrentText('3D')
+        window.preview_orbit_changed(35,20,False)
+        assert window.angle.value()>50
+        window.export_preview.setChecked(True)
+        start = time.monotonic()
+        while window.texture_worker or window.last_key is None or not window.last_key[-1]:
+            app.processEvents(); time.sleep(.005)
+            if time.monotonic()-start>60: raise AssertionError(window.status.text())
+        assert window.active_preview_renderer() is window.export_renderer
+        window.grab().save(str(Path(folder)/'preview-export-texture.png'))
         return dict(frontend='Cutroom / Qt',preview_modes=modes,sliders=True,responsive_layout=True,
-                    view_switch=True,standard_deck_uv_mapping=True)
+                    view_switch=True,standard_deck_uv_mapping=True,camera_linked=True,export_texture_preview=True)
     finally:
         window.baseline = window.workspace()
         window.close()

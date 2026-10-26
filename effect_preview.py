@@ -52,7 +52,7 @@ class AtlasPreview:
         bottom = plane[y1, x0] * (1 - tx) + plane[y1, x1] * tx
         return top * (1 - ty) + bottom * ty
 
-    def render(self, angle, size=(210, 840), region=(0, 0, 1, 1)):
+    def render(self, angle, size=(210, 840), region=(0, 0, 1, 1), view_profile=None, view_pose=None, material=False):
         width, height = size
         u = (np.arange(width, dtype=np.float32)[None, :] + .5) / width
         v = (np.arange(height, dtype=np.float32)[:, None] + .5) / height
@@ -60,15 +60,18 @@ class AtlasPreview:
         u = left + u * (right - left)
         v = top + v * (bottom - top)
         angle = float(np.clip(angle, -1, 1))
+        if view_profile is not None and self.mode not in ('metal','ink','window','liquid','neon'):
+            bias,curve,*scale=view_profile
+            angle=np.clip(angle*(scale[0] if scale else 1)+bias+curve*(u-.5),-1,1)
         if self.mode in ('multi','neon'):
             import advanced_atlas
-            return advanced_atlas.render(self,angle,u,v)
+            return advanced_atlas.render(self,angle,u,v,material=material)
         if self.mode=='liquid':
             import liquid_atlas
-            return liquid_atlas.render(self,angle,u,v)
+            return liquid_atlas.render(self,angle,u,v,view_pose=view_pose)
         if self.mode in ('metal','ink','window'):
             import finish_atlas
-            return finish_atlas.render(self,angle,u,v)
+            return finish_atlas.render(self,angle,u,v,view_pose=view_pose)
         phase = np.mod(u * 112, 1) - .5
         if self.mode=='layers3':
             depth=self.sample(.625,56/4096)

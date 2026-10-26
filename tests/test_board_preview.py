@@ -32,3 +32,42 @@ class BoardPreviewTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+class OrbitCalibrationTests(unittest.TestCase):
+    def test_orbit_is_continuous_reversible_and_bounded(self):
+        from board_preview import orbit_angle, orbit_yaw
+        self.assertEqual(orbit_angle(0),0)
+        for value in (-1,-.75,-.1,0,.1,.75,1):
+            self.assertAlmostEqual(orbit_angle(orbit_yaw(value)),value)
+        self.assertAlmostEqual(orbit_angle(-100),-1)
+        self.assertAlmostEqual(orbit_angle(100),1)
+
+
+class CaptureShapeTests(unittest.TestCase):
+    def test_visible_nose_and_tail_match_capture_proportions(self):
+        self.assertTrue(.71 < surface(1,.04)[0]*2 < .76)
+        self.assertTrue(.94 < surface(1,.12)[0]*2 < .98)
+        self.assertTrue(.57 < surface(1,.96)[0]*2 < .65)
+        from board_preview import CAMERA_DISTANCE, TRUCK_CENTRES, PLATE_CENTRES, PLATE_WIDTH, BOLT_HALF_WIDTH
+        self.assertGreater(CAMERA_DISTANCE,15)
+        self.assertAlmostEqual(TRUCK_CENTRES[0],.228,delta=.005)
+        self.assertGreater(PLATE_CENTRES[0],TRUCK_CENTRES[0])
+        self.assertLess(PLATE_CENTRES[1],TRUCK_CENTRES[1])
+        self.assertLess(2*BOLT_HALF_WIDTH,PLATE_WIDTH)
+
+
+class LensViewCalibrationTests(unittest.TestCase):
+    def test_calibrated_front_favours_the_native_second_picture_without_export_changes(self):
+        from effect_preview import AtlasPreview
+        from creator_engine import atlas
+        from board_preview import LENS_VIEW_PROFILE
+        renderer=AtlasPreview(atlas(Image.new('RGB',(32,128),'red'),Image.new('RGB',(32,128),(0,255,0))),'classic')
+        before=renderer.pixels.tobytes()
+        image=np.asarray(renderer.render(0,(96,384),view_profile=LENS_VIEW_PROFILE),dtype=float)
+        self.assertGreater(image[:,:,1].mean(),image[:,:,0].mean())
+        self.assertEqual(before,renderer.pixels.tobytes())
+        # Full authoring range remains available without the 3D camera profile.
+        first=np.asarray(renderer.render(1,(32,128)),dtype=float)
+        last=np.asarray(renderer.render(-1,(32,128)),dtype=float)
+        self.assertGreater(first[:,:,0].mean(),last[:,:,0].mean())

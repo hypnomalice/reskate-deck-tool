@@ -46,17 +46,21 @@ def neon_pack(art,mask=None,settings=None):
     d.rectangle((128,48,255,63),fill=(encoded(brightness),0,0))
     return atlas
 
-def render(preview,angle,u,v):
+def render(preview,angle,u,v,material=False):
     from effect_preview import display
     if preview.mode=='neon':
         base=preview.sample(u,64/4096+v*1984/4096)
         glow=preview.sample(u,.5+v*.5)
-        # Illustrative tone mapping, not a promise of the game's bloom response.
-        return display(1-np.exp(-(base+glow*float(preview.motion[0])*4)))
+        # The native pass routes emission separately, at 32 times the authored
+        # gain. Keep it out of albedo and apply exposure only in the lit preview.
+        emission=glow*float(preview.motion[0])*32
+        image=display(base if material else base+emission*.35)
+        if material:image.info['linear_emission']=emission
+        return image
     count=int(round(float(preview.motion[0])*8));count=max(2,min(8,count))
     scale=1+(count-2)*(15.909090909-1)/6
     position=np.clip(angle*.22*scale+(count-1)*.5,0,count-1)
-    first=min(count-2,int(np.floor(position)));fraction=position-first
+    first=np.minimum(count-2,np.floor(position).astype(np.int32));fraction=position-first
     phase=np.mod(u*112,1)-.5
     t=np.clip((fraction-.5-phase*.2)*12.5+.5,0,1)
     weight=(.02+.96*t*t*(3-2*t))[...,None]

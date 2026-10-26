@@ -42,31 +42,39 @@ def pack(mode, graphic, second=None, object_image=None):
     draw.rectangle((128,48,255,63),fill=(0,188,0))
     return atlas
 
-def render(renderer,angle,u,v):
+def render(renderer,angle,u,v,view_pose=None):
     """Illustrative material preview; game lighting remains game-controlled."""
     from effect_preview import display
-    angle=float(np.clip(angle,-1,1))
+    from material_view import view_vector, cavity
+    view=view_vector(angle,view_pose)
+    slope=float(np.clip(view[0]/max(abs(view[2]),.0001),-1,1))
     mode=renderer.mode
     if mode in ('metal','ink'):
         rgb=renderer.sample(u,(64+v*1984)/4096)
         data=renderer.sample(u,.5+v*.5)
         if mode=='metal':
-            align=np.clip(1-np.abs(data[:,:,2]-(.5+angle*.42))*8,0,1)
+            align=np.clip(1-np.abs(data[:,:,2]-(.5+slope*.42))*8,0,1)
             sparkle=data[:,:,0]*align**4
             return display(rgb*.82+sparkle[:,:,None]*np.array([2.2,2.5,2.9]))
-        progress=np.clip((.66913-abs(angle))/.42721,0,1)
+        incidence=float(np.linalg.norm(view[:2])/max(np.linalg.norm(view),1e-6))
+        progress=np.clip((.6691306063588582-incidence)/.42720871075919054,0,1)
         progress=progress*progress*(3-2*progress)
         field=.5+.18*np.sin(u*11+v*5)+.14*np.sin(u*7-v*13)
         reveal=np.clip((progress-field+.16)/.32,0,1)
         reveal=reveal*reveal*(3-2*reveal)*data[:,:,0]
-        return display(rgb*(1-reveal[:,:,None])+np.array([.248,.525,.655])*reveal[:,:,None])
-    # Recessed background and optional object on separate fixed-depth planes.
-    back_u=np.clip(u+angle*.22,0,1);obj_u=u+angle*.11
-    back=renderer.sample(back_u,.25+v*.25)
-    obj=renderer.sample(np.clip(obj_u,0,1),.5+v*.25)
-    obj_alpha=renderer.sample(u+angle*.11,.75+v*.25)[:,:,1]
-    obj_alpha*=((obj_u>=0)&(obj_u<=1))
-    inside=obj*obj_alpha[:,:,None]+back*(1-obj_alpha[:,:,None])
-    frame=renderer.sample(u,(64+v*960)/4096)
-    alpha=renderer.sample(u,.75+v*.25)[:,:,0]
-    return display(frame*alpha[:,:,None]+inside*(1-alpha[:,:,None]))
+        return display(np.array([.018,.025,.055])+reveal[:,:,None]*np.array([.23,.5,.6]))
+    # Port of the accepted authored shader's .7-deep corridor, not a fitted
+    # background shift. The front, interior faces and object use distinct UVs.
+    u,v=np.broadcast_arrays(u,v)
+    inside,hit=cavity(renderer,u,v,view)
+    rx,ry,z,_,_,_=hit
+    ou=.5+((u-.5)+rx*.35)/.70
+    ov=.5+((v-.5)*4+ry*.35)/1.40
+    valid=(ou>0)&(ou<1)&(ov>0)&(ov<1)&(z>.35)
+    ou,ov=np.clip(ou,.001,.999),np.clip(ov,.001,.999)
+    obj=renderer.sample(ou,.5+ov*.25)
+    alpha=renderer.sample(ou,.75+ov*.25)[...,1]*valid
+    inside=inside*(1-alpha[...,None])+obj*alpha[...,None]
+    front=renderer.sample(np.clip(u,.001,.999),(64+v*960)/4096)
+    opacity=renderer.sample(np.clip(u,.001,.999),.75+v*.25)[...,0]
+    return display(front*opacity[...,None]+inside*(1-opacity[...,None]))

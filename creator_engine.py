@@ -109,7 +109,7 @@ def rename_item(raw,name):
 def export(a,b,dest,progress=lambda message:None,*,name="My Lenticular Deck",author="",fit="Stretch",background="#ffffff",thumbnail_path=None):
     return export_pack([dict(images=[str(a),str(b)],name=name,author=author,fit=fit,background=background,thumbnail=thumbnail_path)],dest,progress,title=name,author=author)
 
-def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular Deck Pack",author="",shared_runtime=False):
+def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular Deck Pack",author="",shared_runtime=False,_texture_only=False):
     import copy
     import tempfile
     import image_placement
@@ -161,10 +161,10 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
                 image.save(target)
                 project['images'][index] = str(target)
             project['fit'] = 'Stretch'
-        return _export_pack(projects,dest,progress,title=title,author=author,shared_runtime=shared_runtime)
+        return _export_pack(projects,dest,progress,title=title,author=author,shared_runtime=shared_runtime,_texture_only=_texture_only)
 
 
-def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular Deck Pack",author="",shared_runtime=False):
+def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular Deck Pack",author="",shared_runtime=False,_texture_only=False):
     dest=Path(dest).resolve()
     if dest.suffix.lower()!='.fbmod':raise ValueError('Choose an .fbmod output file.')
     if not projects:raise ValueError('Add at least one deck to the pack.')
@@ -254,7 +254,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             texture=encode(atlas(a,b,fit,background),progress)
             thumb=thumbnail(a,b,custom,fit,background)
         wood=None
-        if project.get('wood_tint'):
+        if project.get('wood_tint') and not _texture_only:
             import math
             colour=ImageColor.getrgb(project['wood_tint'])
             intensity=float(project.get('wood_intensity',1))
@@ -267,6 +267,8 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             wood=b''.join(encode_thumbnail(tinted.resize((max(4,1024>>level),max(4,2048>>level)),Image.Resampling.LANCZOS)) for level in range(12))
         continuous=mode in ('ghost','metal','ink','window','liquid','neon') or (mode=='classic' and bool(project.get('extra_images'))) or (mode=='depth' and not project.get('lenticular',True)) or (mode=='layers' and bool(project.get('middle_image')))
         decks.append(dict(name=name,mode='depth' if mode=='layers' or (mode=='classic' and project.get('extra_images')) else 'classic' if mode in ('gif','ghost','metal','ink','window','liquid','neon') else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' or continuous else None,resident=mode=='gif' or continuous,wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
+    if _texture_only:
+        return decks
     result=deck_archive.build(decks,raw_cas,title,author.strip(),independent_shader=True)
     check_head,check_blobs=split_mod(result)
     assert len(check_blobs)==14*len(projects)+13+2*int(any(d.get('resident') for d in decks))+3*sum(bool(p.get('wood_tint')) for p in projects)
@@ -287,3 +289,14 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('image_a');p.add_argument('image_b');p.add_argument('output')
     p.add_argument('--name',default='Lenticular Input3 Probe');p.add_argument('--author',default='');p.add_argument('--fit',default='Stretch',choices=['Stretch','Crop to fill','Fit entire image'])
     a=p.parse_args();print(export(a.image_a,a.image_b,a.output,print,name=a.name,author=a.author,fit=a.fit))
+
+
+def export_texture(project, progress=lambda message: None):
+    """Prepare the exact export texture without building or writing a mod.
+
+    Uses export's placement, view generation, packing and BC7 profile, rather
+    than the faster approximate preview path. Call from a background worker.
+    """
+    import tempfile
+    return export_pack([project], Path(tempfile.gettempdir())/'deck-preview.fbmod', progress,
+                       title=project['name'], _texture_only=True)[0]

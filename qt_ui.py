@@ -1,5 +1,6 @@
 import copy
 import json
+import math
 import os
 import queue
 import random
@@ -11,7 +12,7 @@ import numpy as np
 from pathlib import Path
 
 from PIL import Image, ImageOps
-from PySide6.QtCore import Qt, QTimer, QRectF, Signal
+from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPalette, QImage
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QFormLayout, QLabel, QPushButton, QToolButton, QLineEdit, QComboBox, QSlider,
@@ -42,6 +43,7 @@ QDoubleSpinBox { background:#1d2024; color:#e4e7eb; }
 QPushButton,QToolButton { background:#30353b; border:1px solid #505860; border-radius:3px; padding:5px 9px; min-height:18px; }
 QToolButton { padding:1px; }
 QPushButton:hover,QToolButton:hover { border-color:#8cb5ca; }
+QPushButton:checked { background:#356b86; border-color:#8cb5ca; }
 QPushButton#primary { background:#356b86; border-color:#6e9db6; }
 QSlider::groove:horizontal { height:4px; background:#50575f; border-radius:2px; }
 QSlider::sub-page:horizontal { background:#8bbbd3; border-radius:2px; }
@@ -131,13 +133,14 @@ class Adjustment(QWidget):
 
 
 class Board(QWidget):
+    orbit_changed = Signal(float, float, bool)
     def __init__(self):
         super().__init__()
         self.frame = None
         self.wood = '#9a7855'
         self.guides = True
         self.view_mode = '2D'
-        self.yaw, self.pitch = -22., 24.
+        self.yaw, self.pitch = 0., 0.
         self.drag_position = None
         self.setMinimumSize(250,180)
 
@@ -152,13 +155,18 @@ class Board(QWidget):
             self.drag_position=event.position()
             self.yaw=max(-70.,min(70.,self.yaw+delta.x()*.4))
             self.pitch=max(-65.,min(65.,self.pitch+delta.y()*.3))
+            self.orbit_changed.emit(self.yaw,self.pitch,True)
             self.update()
 
     def mouseReleaseEvent(self,event):
+        was_dragging = self.drag_position is not None
         self.drag_position=None
+        if was_dragging:
+            self.orbit_changed.emit(self.yaw,self.pitch,False)
 
     def mouseDoubleClickEvent(self,event):
-        self.yaw,self.pitch=-22.,24.
+        self.yaw,self.pitch=0.,0.
+        self.orbit_changed.emit(self.yaw,self.pitch,False)
         self.update()
 
     def paintEvent(self,event):
@@ -170,11 +178,18 @@ class Board(QWidget):
             painter.setRenderHint(QPainter.SmoothPixmapTransform)
             draw_3d(painter,self)
             return
-        h = min(self.height()-30,(self.width()-45)*4)
-        w = h/4
+        h = min(self.height()-30,(self.width()-45)*board_preview.DECK_LENGTH)
+        w = h/board_preview.DECK_LENGTH
         area = QRectF((self.width()-w)/2,(self.height()-h)/2,w,h)
         path = QPainterPath()
-        path.addRoundedRect(area,w/2,w/2)
+        steps=[.5-.5*math.cos(math.pi*j/80) for j in range(81)]
+        outline=[(0,v) for v in steps]+[(1,v) for v in reversed(steps)]
+        for i,(u,v) in enumerate(outline):
+            x,_,_=board_preview.surface(u,v)
+            point=QPointF(area.left()+(x+.5)*w,area.top()+v*h)
+            if i==0:path.moveTo(point)
+            else:path.lineTo(point)
+        path.closeSubpath()
         painter.setPen(QPen(QColor(self.wood),5))
         painter.setBrush(QColor('#30353b'))
         painter.drawPath(path)
@@ -189,13 +204,14 @@ class Board(QWidget):
         if self.guides:
             painter.setPen(QPen(QColor('#bec8d1'),1,Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
-            for centre in (.225,.775):
+            for axle,centre in zip(board_preview.TRUCK_CENTRES,board_preview.PLATE_CENTRES):
                 y = area.top()+h*centre
-                painter.drawRoundedRect(QRectF(area.left()+w*.28,y-h*.025,w*.44,h*.05),3,3)
-                painter.drawLine(round(area.left()-8),round(y),round(area.right()+8),round(y))
-                for x in (.36,.64):
-                    for offset in (-.017,.017):
+                painter.drawRoundedRect(QRectF(area.left()+w*(.5-board_preview.PLATE_WIDTH/2),y-h*board_preview.PLATE_LENGTH/2,w*board_preview.PLATE_WIDTH,h*board_preview.PLATE_LENGTH),3,3)
+                painter.drawLine(round(area.left()+w*.04),round(area.top()+h*axle),round(area.right()-w*.04),round(area.top()+h*axle))
+                for x in (.5-board_preview.BOLT_HALF_WIDTH,.5+board_preview.BOLT_HALF_WIDTH):
+                    for offset in (-board_preview.BOLT_HALF_LENGTH,board_preview.BOLT_HALF_LENGTH):
                         painter.drawEllipse(QRectF(area.left()+w*x-2,y+h*offset-2,4,4))
+
 
 
 class DetailImage(QWidget):
@@ -252,6 +268,8 @@ class Creator(QMainWindow):
         self.last_detail_key = None
         self.pending = None
         self.frame_worker = False
+        self.orbit_dragging = self.camera_sync = self.texture_worker = False
+        self.export_renderer = self.export_renderer_key = None
         self.frame_renderer = self.frame_renderer_key = self.frame_request_key = None
         self.renderer = self.detail_renderer = self.clip = None
         self.gif_cache = {}
@@ -648,9 +666,14 @@ class Creator(QMainWindow):
         row.addStretch()
         self.view_mode = QComboBox()
         self.view_mode.addItems(['2D','3D'])
-        self.view_mode.setToolTip('Both views use the standard deck artwork mapping. 3D is a procedural shape preview, not game lighting. Drag to orbit; double-click to reset.')
+        self.view_mode.setToolTip('Both views use the standard deck artwork mapping. 3D is a procedural shape preview, not game lighting. Drag to orbit and change the effect together; double-click to reset.')
         self.view_mode.currentTextChanged.connect(self.preview_view_changed)
         row.addWidget(self.view_mode)
+        self.export_preview = QPushButton('Export texture')
+        self.export_preview.setCheckable(True)
+        self.export_preview.setToolTip('Prepare the actual exported BC7 texture in the background. Includes export placement and depth views. Static decks only; lighting and shape remain approximate. Editing returns to fast preview.')
+        self.export_preview.toggled.connect(self.export_texture_checked)
+        row.addWidget(self.export_preview)
         button('Enlarge…',self.enlarge,row)
         right.addLayout(row)
         row = QHBoxLayout()
@@ -658,6 +681,12 @@ class Creator(QMainWindow):
         self.guides.setChecked(True)
         self.guides.toggled.connect(self.guides_changed)
         row.addWidget(self.guides)
+        self.studio_light = QCheckBox('Game room light')
+        self.studio_light.setChecked(True)
+        self.studio_light.setEnabled(False)
+        self.studio_light.setToolTip('Colour and light calibrated from the supplied native menu captures. Different maps, HDR settings and effect materials can differ. Turn off to inspect unlit artwork.')
+        self.studio_light.toggled.connect(self.render_reset)
+        row.addWidget(self.studio_light)
         self.detail_toggle = QCheckBox('Lens detail')
         self.detail_toggle.setChecked(True)
         self.detail_toggle.toggled.connect(self.render_reset)
@@ -665,6 +694,7 @@ class Creator(QMainWindow):
         row.addStretch()
         right.addLayout(row)
         self.board = Board()
+        self.board.orbit_changed.connect(self.preview_orbit_changed)
         right.addWidget(self.board,1)
         inspector_pane = QWidget()
         inspector_layout = QVBoxLayout(inspector_pane)
@@ -702,9 +732,10 @@ class Creator(QMainWindow):
         placement.addLayout(row)
         self.placement.setMinimumHeight(300)
         self.angle = Adjustment('Viewing angle',0,-100,100,tip='Sweep through the effect. This is a transition range, not a physical camera angle.')
-        self.angle.changed.connect(self.render_reset)
+        self.angle.changed.connect(self.preview_angle_changed)
         right.addWidget(self.angle)
-        note = QLabel('Note: may not reflect 1:1 in game')
+        note = QLabel('Fast texture preview · game lighting and shape are approximate')
+        self.preview_note = note
         note.setAlignment(Qt.AlignCenter)
         note.setObjectName('muted')
         right.addWidget(note)
@@ -1041,6 +1072,7 @@ class Creator(QMainWindow):
         self.current()['middle_image']=None;self.update_mode();self.schedule(clear=True)
 
     def schedule(self,clear=False):
+        self.invalidate_export_preview()
         self.revision += 1
         self.pending = None
         self.gif_cache.clear()
@@ -1176,18 +1208,33 @@ class Creator(QMainWindow):
     def poll(self):
         while not self.events.empty():
             kind,revision,result = self.events.get()
-            if kind=='frame':
+            if kind=='export_preview':
+                self.texture_worker = False
+                self.export_preview.setEnabled(True)
+                source, decoded, error = result
+                if revision == self.revision and source is self.renderer and self.export_preview.isChecked():
+                    if error:
+                        self.invalidate_export_preview()
+                        self.status.setText('Export texture preview: '+error)
+                    else:
+                        self.export_renderer, self.export_renderer_key = decoded, (revision,source)
+                        self.preview_note.setText('Exported BC7 pixels · game lighting and shape are approximate')
+                        self.status.setText('Export texture ready')
+                        self.render_reset()
+                elif self.export_preview.isChecked():
+                    self.invalidate_export_preview()
+            elif kind=='frame':
                 self.frame_worker = False
                 key, image, error = result
-                dragging = self.angle.slider.isSliderDown()
+                dragging = self.angle.slider.isSliderDown() or self.orbit_dragging
                 wanted = self.frame_request_key
-                acceptable = key == wanted or (dragging and wanted is not None and key[2:] == wanted[2:])
+                acceptable = key == wanted or (dragging and wanted is not None and key[2:7] == wanted[2:7] and key[7][:2] == wanted[7][:2] and key[-1] == wanted[-1])
                 if revision == self.revision and acceptable:
                     if error:
                         self.last_key = key
                         self.status.setText('Preview: '+error)
                     else:
-                        self.present_frame(image, key)
+                        self.present_frame(image, key, prepared=True)
                 self.render()
             elif kind in ('preview','preview_error'):
                 self.worker = False
@@ -1296,33 +1343,37 @@ class Creator(QMainWindow):
         if self.loading:
             return
         self.remember()
+        self.invalidate_export_preview()
         if self.renderer:
             self.renderer.set_lens_strength(self.bands.value()/100)
         self.render_reset()
 
     def render(self):
+        active_renderer = self.active_preview_renderer()
         mode = self.current()['mode']
         angle,bands = self.angle.value()/100,self.bands.value()/100
         gif_index = self.clip.frame_index(((time.monotonic()-self.started)*1000)%self.clip.duration_ms) if self.clip else None
-        size = (120,480) if self.angle.slider.isSliderDown() else (180,720) if not self.large else (320,1280)
-        key = (self.revision,angle,bands,self.detail_toggle.isChecked(),gif_index,size,self.live_placement)
+        size = (120,480) if self.angle.slider.isSliderDown() or self.orbit_dragging else (180,720) if not self.large else (320,1280)
+        surface_state = (self.view_mode.currentText(),self.studio_light.isChecked(),self.board.yaw,self.board.pitch)
+        key = (self.revision,angle,bands,self.detail_toggle.isChecked(),gif_index,size,self.live_placement,surface_state,active_renderer is self.export_renderer and active_renderer is not None)
         self.frame_request_key = key
         if self.last_key==key:
             return
-        if self.renderer is not None and not self.clip and not self.live_placement:
+        if active_renderer is not None and not self.clip and not self.live_placement:
             if self.display_revision != self.revision or self.frame_worker:
                 return
-            renderer_key = (self.renderer, bands)
+            renderer_key = (active_renderer, bands)
             if self.frame_renderer_key != renderer_key:
-                self.frame_renderer = copy.copy(self.renderer)
-                self.frame_renderer.settings = self.renderer.settings.copy()
-                self.frame_renderer.set_lens_strength(bands)
+                self.frame_renderer = copy.copy(active_renderer)
+                self.frame_renderer.settings = active_renderer.settings.copy()
+                if active_renderer is not self.export_renderer:
+                    self.frame_renderer.set_lens_strength(bands)
                 self.frame_renderer_key = renderer_key
             snapshot = self.frame_renderer
             self.frame_worker = True
             def draw():
                 try:
-                    result = (key, snapshot.render(angle, size), None)
+                    result = (key, self.prepare_surface(self.effect_frame(snapshot,angle,size,key), key), None)
                 except Exception as exc:
                     result = (key, None, str(exc))
                 self.events.put(('frame', key[0], result))
@@ -1338,17 +1389,50 @@ class Creator(QMainWindow):
         elif self.live_placement and self.placement_sources is not None:
             image = self.placement_frame(size)
         elif self.renderer:
-            image = self.renderer.render(angle,size)
+            image = self.effect_frame(self.renderer,angle,size,key)
         else:
             return
-        self.present_frame(image, key)
+        if surface_state[0] == '3D' and surface_state[1]:
+            if self.frame_worker:
+                return
+            self.frame_worker = True
+            def finish_surface():
+                try:
+                    result = (key,self.prepare_surface(image.resize(size,Image.Resampling.LANCZOS),key),None)
+                except Exception as exc:
+                    result = (key,None,str(exc))
+                self.events.put(('frame',key[0],result))
+            threading.Thread(target=finish_surface,daemon=True).start()
+        else:
+            self.present_frame(image, key)
 
-    def present_frame(self, image, key):
+    @staticmethod
+    def effect_frame(renderer,angle,size,key,region=None):
+        if key[7][0]=='3D' and getattr(renderer,'mode',None) in ('classic','multi'):
+            return renderer.render(angle,size,region or (0,0,1,1),view_profile=board_preview.LENS_VIEW_PROFILE)
+        if key[7][0]=='3D' and getattr(renderer,'mode',None) in ('metal','ink','window','liquid'):
+            return renderer.render(angle,size,region or (0,0,1,1),view_pose=key[7][2:4])
+        if key[7][0]=='3D' and key[7][1] and getattr(renderer,'mode',None)=='neon':
+            return renderer.render(angle,size,region or (0,0,1,1),material=True)
+        return renderer.render(angle,size,region) if region is not None else renderer.render(angle,size)
+
+    @staticmethod
+    def prepare_surface(image,key):
+        emission=image.info.get('linear_emission')
+        image=board_preview.map_artwork(image)
+        view,lit,yaw,pitch=key[7]
+        if view == '3D' and lit:
+            from preview_lighting import shade, map_emission
+            image=shade(image,yaw,pitch,emission=map_emission(emission,image.size) if emission is not None else None)
+        return image
+
+    def present_frame(self, image, key, prepared=False):
         mode = self.current()['mode']
         angle, bands = key[1:3]
         self.last_key = key
-        self.preview_title.setText('Deck preview · positioning' if self.live_placement and not self.clip else 'Deck preview')
-        image = board_preview.map_artwork(image)
+        self.preview_title.setText('Deck preview · positioning' if self.live_placement and not self.clip else 'Deck preview · export texture' if key[-1] else 'Deck preview')
+        if not prepared:
+            image = board_preview.map_artwork(image)
         pixmap = QPixmap.fromImage(qt_image(image))
         self.board.frame = pixmap
         self.board.update()
@@ -1357,13 +1441,16 @@ class Creator(QMainWindow):
             self.large_board.update()
         show = mode in ('depth','layers') and self.current().get('lenticular',True) and self.detail_toggle.isChecked() and self.detail_renderer is not None
         self.update_inspectors()
-        detail_key = (id(self.detail_renderer),angle,bands,getattr(self,'lens_region',None))
+        inspected = self.export_renderer if key[-1] else self.detail_renderer
+        detail_key = (id(inspected),angle,bands,getattr(self,'lens_region',None))
         if show and detail_key!=self.last_detail_key:
             self.last_detail_key = detail_key
             self.detail_images[1][0].setText(f'Lens texture {bands*100:.0f}%')
+            inspection = copy.copy(inspected)
+            inspection.settings = inspected.settings.copy()
             for (_,label),strength in zip(self.detail_images,(0,bands)):
-                self.detail_renderer.set_lens_strength(strength)
-                crop = self.detail_renderer.render(angle,(240,96),self.lens_region)
+                inspection.set_lens_strength(strength)
+                crop = self.effect_frame(inspection,angle,(240,96),key,self.lens_region)
                 label.setPixmap(QPixmap.fromImage(qt_image(crop)))
 
     def guides_changed(self,value):
@@ -1373,12 +1460,74 @@ class Creator(QMainWindow):
             self.large_board.guides = value
             self.large_board.update()
 
+    def active_preview_renderer(self):
+        if self.export_preview.isChecked() and self.export_renderer_key == (self.revision,self.renderer):
+            return self.export_renderer
+        return self.renderer
+
+    def invalidate_export_preview(self):
+        self.export_renderer = self.export_renderer_key = None
+        self.export_preview.blockSignals(True)
+        self.export_preview.setChecked(False)
+        self.export_preview.blockSignals(False)
+        self.preview_note.setText('Fast texture preview · game lighting and shape are approximate')
+
+    def export_texture_checked(self,enabled):
+        self.render_reset()
+        if not enabled:
+            self.preview_note.setText('Fast texture preview · game lighting and shape are approximate')
+            return
+        if self.texture_worker or self.renderer is None or self.clip or self.live_placement or self.display_revision != self.revision:
+            self.invalidate_export_preview()
+            self.status.setText('Finish editing a static deck before checking its export texture.')
+            return
+        self.remember()
+        revision, source, project = self.revision, self.renderer, copy.deepcopy(self.current())
+        self.texture_worker = True
+        self.export_preview.setEnabled(False)
+        self.status.setText('Preparing export texture; fast preview remains available…')
+        def run():
+            try:
+                import preview_texture
+                decoded = preview_texture.prepare(project,source.mode)
+                result = (source,decoded,None)
+            except Exception as exc:
+                result = (source,None,str(exc))
+            self.events.put(('export_preview',revision,result))
+        threading.Thread(target=run,daemon=True).start()
+
+    def preview_angle_changed(self,*args):
+        if self.view_mode.currentText() == '3D' and not self.camera_sync:
+            yaw = board_preview.orbit_yaw(self.angle.value()/100)
+            for board in ([self.board,self.large_board] if self.large else [self.board]):
+                board.yaw = yaw
+                board.update()
+        self.render_reset()
+
+    def preview_orbit_changed(self,yaw,pitch,dragging):
+        self.orbit_dragging = dragging
+        for board in ([self.board,self.large_board] if self.large else [self.board]):
+            board.yaw,board.pitch = yaw,pitch
+            board.update()
+        self.camera_sync = True
+        try:
+            self.angle.spin.setValue(board_preview.orbit_angle(yaw)*100)
+        finally:
+            self.camera_sync = False
+        self.render_reset()
+
     def preview_view_changed(self,value):
+        self.studio_light.setEnabled(value == '3D')
+        if value == '3D':
+            self.preview_orbit_changed(self.board.yaw,self.board.pitch,False)
+        else:
+            self.orbit_dragging = False
         self.board.view_mode=value
         self.board.update()
         if self.large:
             self.large_board.view_mode=value
             self.large_board.update()
+        self.render_reset()
 
     def wood_changed(self,*args):
         if self.loading:
@@ -1502,6 +1651,7 @@ class Creator(QMainWindow):
         dialog.resize(620,920)
         layout = QVBoxLayout(dialog)
         self.large_board = Board()
+        self.large_board.orbit_changed.connect(self.preview_orbit_changed)
         self.large_board.view_mode = self.view_mode.currentText()
         self.large_board.yaw,self.large_board.pitch = self.board.yaw,self.board.pitch
         self.large_board.guides = self.guides.isChecked()

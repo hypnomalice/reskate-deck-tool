@@ -31,52 +31,60 @@ def pack(front,background,values=None):
     return atlas
 
 
-def render(renderer,angle,u,v):
-    """Illustrative tilted bottle; game motion and lighting are separate."""
+def render(renderer,angle,u,v,view_pose=None):
+    """Authored cavity, fixed-world gravity, physical wet path and optical tint.
+
+    Clock/motion inputs are held steady here; game slosh is not reproduced from
+    camera movement. The pose changes gravity only when the board actually tilts.
+    """
     from effect_preview import display
-    cfg=renderer.sample(.625,56/4096)
-    cloud,depth,amount=map(float,cfg)
-    colour=renderer.sample(.375,56/4096)
-    depth=.025+.155*depth
-    # Upright authoring view: camera angle never reverses gravity.
-    tilt=float(angle)
-    u,v=np.broadcast_arrays(u,v)
-    rx=tilt*.65;ry=.65
-    px=u-.5;py=(v-.5)*4
-    exit_x=(.5-np.sign(rx)*px)/max(abs(rx),1e-6)
-    exit_y=(2-py)/ry
-    z=np.maximum(0,np.minimum(depth,np.minimum(exit_x,exit_y)))
-    back_face=z>=depth-1e-5
-    side_face=exit_x<exit_y
-    back_u=np.clip(u+rx*z,0,1);back_v=np.clip(v+ry*z*.25,0,1)
-    wall_u=np.where(rx>=0,1-z/depth*.12,z/depth*.12)
-    sample_u=np.where(back_face,back_u,np.where(side_face,wall_u,back_u))
-    sample_v=np.where(back_face,back_v,np.where(side_face,back_v,1-z/depth*.12))
-    level=(v-(1-amount))*4
-    end_level=level+ry*z
-    pixel=max(.0001,4/max(1,u.shape[0]))
-    front_wet=np.clip(level/pixel+.5,0,1)
-    rear_wet=np.clip(end_level/pixel+.5,0,1)
-    cap=np.maximum(0,rear_wet-front_wet)
-    wet_path=np.maximum(0,z-np.clip(-level/ry,0,z))
-    wet=np.maximum(front_wet,wet_path/depth)
-    if amount<=.00001:wet[:]=0;cap[:]=0
-    if amount>=.99999:wet[:]=1;cap[:]=0
+    from material_view import view_vector,gravity_vector,cavity,volume_offset,wet_path
+    cloud,depth_value,amount=map(float,renderer.sample(.625,56/4096))
+    colour=renderer.sample(.375,56/4096);depth=.025+.155*depth_value
     thickness=float(renderer.sample(.875,56/4096)[0])
-    ripple=np.sin(u*12+v*12+tilt*(2-1.5*thickness))*depth*.045*wet*(1-.7*thickness)
-    back=renderer.sample(np.clip(sample_u+ripple,0,1),.25+np.clip(sample_v+ripple*.25,0,1)*.25)
+    view=view_vector(angle,view_pose);gravity=gravity_vector(view_pose)
+    u,v=np.broadcast_arrays(u,v)
+    _,hit=cavity(renderer,u,v,view,liquid=True)
+    _,_,_,bu,bv,_=hit
+    px=u-.5;py=(v-.5)*4
+    level=gravity[0]*px+gravity[1]*py-gravity[2]*depth*.5+volume_offset(gravity,depth,amount)
+    fill_rx=float(view[0]*.35);fill_ry=float(view[1]*-.8)
+    direction=gravity[0]*fill_rx+gravity[1]*fill_ry+gravity[2]
+    wet,crossing=wet_path(level,direction,depth,amount)
+    # An exactly upright view has no change along its parallel ray. Preserve
+    # a narrow, pixel-sized liquid boundary instead of dividing by zero.
+    du=float(np.ptp(u)/max(u.shape[1]-1,1));dv=float(np.ptp(v)/max(v.shape[0]-1,1))
+    edge=max(.00008,.35*(abs(gravity[0])*du+abs(gravity[1])*4*dv))
+    if abs(direction)<1e-5:
+        wet=np.clip(level/edge+.5,0,1)*depth
+        if amount<=.00001:wet[:]=0
+        if amount>=.99999:wet[:]=depth
+    fraction=np.clip(wet/depth,0,1)
+    cap=np.abs(np.clip(level/edge+.5,0,1)-np.clip((level+direction*depth)/edge+.5,0,1))
+    crossing=np.clip(crossing,0,depth);hx=px+fill_rx*crossing;hy=py+fill_ry*crossing
+    amp=.0035*(1-thickness*.7)
+    phase_a=hx*12+hy*3;phase_b=hx*-7+hy*9
+    slope_x=amp*(np.cos(phase_a)*12+np.cos(phase_b)*-4.2)
+    slope_y=amp*(np.cos(phase_a)*3+np.cos(phase_b)*5.4)
+    ru=np.clip(bu+slope_x*fraction*.85,.001,.999)
+    rv=np.clip(bv+slope_y*fraction*.85*.25,.001,.999)
+    dry=renderer.sample(bu,.25+bv*.25)
+    refracted=renderer.sample(ru,.25+rv*.25)
     if cloud>0:
-        blurred=sum(renderer.sample(np.clip(sample_u+ripple+dx*.012*cloud,0,1),.25+np.clip(sample_v+ripple*.25+dy*.003*cloud,0,1)*.25) for dx,dy in ((1,0),(-1,0),(0,1),(0,-1)))*.25
-        soften=cloud*wet[:,:,None]
-        back=back*(1-soften)+blurred*soften
-    back*=np.where(back_face,1,np.where(side_face,.78,.87))[:,:,None]
-    transmission=np.exp(-wet[:,:,None]*(.7+4*(1-colour))*.7)
-    inside=back*transmission+colour*(1-transmission)
-    inside=inside*(1-cloud*wet[:,:,None]*.3)+colour*cloud*wet[:,:,None]*.3
-    cap_colour=back*.22+(colour*.8+.035)*.78
-    inside=inside*(1-cap[:,:,None]*.72)+cap_colour*cap[:,:,None]*.72
-    front=renderer.sample(u,(64+v*960)/4096)
-    alpha=renderer.sample(u,.75+v*.25)[:,:,0]
-    shadow=renderer.sample(np.clip(u+depth*.35,0,1),.75+np.clip(v+depth*.12,0,1)*.25)[:,:,0]
-    inside*=1-shadow[:,:,None]*(.22+.16*wet[:,:,None])
-    return display(front*alpha[:,:,None]+inside*(1-alpha[:,:,None]))
+        radius=cloud*fraction*.012
+        blurred=sum(renderer.sample(np.clip(ru+dx*radius,.001,.999),.25+np.clip(rv+dy*radius,.001,.999)*.25) for dx,dy in ((1,0),(-1,0),(0,.25),(0,-.25)))*.25
+        refracted=refracted*(1-cloud)+blurred*cloud
+    wet_coverage=np.clip(wet/.001,0,1)
+    scene=dry*(1-wet_coverage[...,None])+refracted*wet_coverage[...,None]
+    path=wet*np.sqrt(1+fill_rx**2+fill_ry**2)
+    transmission=np.exp(-path[...,None]*(.7/depth)*(.7+4*(1-colour)))
+    inside=scene*transmission+colour*(1-transmission)
+    # Projected front-art shadow remains on the interior, not on the fixed label.
+    shadow=renderer.sample(np.clip(.5+hx+crossing*.35,.001,.999),.75+np.clip(.5+hy*.25+crossing*.12,.001,.999)*.25)[...,0]
+    cap_colour=scene*.22+(colour*.8+.035)*.78
+    inside=inside*(1-cap[...,None]*.72)+cap_colour*cap[...,None]*.72
+    inside*=1-shadow[...,None]*(.22+.16*fraction[...,None])
+    inside=inside*(1-cloud*fraction[...,None]*.3)+colour*cloud*fraction[...,None]*.3
+    front=renderer.sample(np.clip(u,.001,.999),(64+v*960)/4096)
+    opacity=renderer.sample(np.clip(u,.001,.999),.75+v*.25)[...,0]
+    return display(front*opacity[...,None]+inside*(1-opacity[...,None]))

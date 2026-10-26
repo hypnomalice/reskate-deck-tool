@@ -42,8 +42,8 @@ class LiquidAtlasTests(unittest.TestCase):
                 self.assertGreater(bottom[2]-bottom[1],20)
 
     def test_depth_has_a_visible_cap(self):
-        small=AtlasPreview(liquid_atlas.pack(self.front,self.back,dict(depth=.025)),'liquid').render(.8,(96,384))
-        deep=AtlasPreview(liquid_atlas.pack(self.front,self.back,dict(depth=.18)),'liquid').render(.8,(96,384))
+        small=AtlasPreview(liquid_atlas.pack(self.front,self.back,dict(depth=.025)),'liquid').render(.8,(96,384),view_pose=(45,15))
+        deep=AtlasPreview(liquid_atlas.pack(self.front,self.back,dict(depth=.18)),'liquid').render(.8,(96,384),view_pose=(45,15))
         delta=np.abs(np.asarray(small,dtype=float)-np.asarray(deep,dtype=float))
         self.assertGreater(delta[175:193,20:76].mean(),3)
 
