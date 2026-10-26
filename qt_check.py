@@ -39,7 +39,7 @@ def check(folder, projects):
             window.selected = index
             window.apply_deck()
             start = time.monotonic()
-            while window.renderer is None and window.clip is None:
+            while (window.renderer is None and window.clip is None) or window.board.frame is None or window.last_key is None or window.last_key[0]!=window.revision:
                 app.processEvents()
                 time.sleep(.005)
                 if time.monotonic()-start>15:
@@ -67,7 +67,7 @@ def check(folder, projects):
         assert window.workspace()['decks'][1]['depth']['strength']==.12
         assert window.tabs.count()==len(projects)+9
         start = time.monotonic()
-        while window.renderer is None:
+        while window.renderer is None or window.last_key is None or window.last_key[0]!=window.revision:
             app.processEvents()
             time.sleep(.005)
             if time.monotonic()-start>15:

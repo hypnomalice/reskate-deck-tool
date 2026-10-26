@@ -50,40 +50,16 @@ def thumbnail(a,b,custom=None,fit="Stretch",background="#ffffff",size=768,label=
     return out
 
 def encode_thumbnail(im):
-    im=im.convert('RGBA')
-    return tc.compress_blocks_bc7(tc.RGBASurface(im.tobytes(),im.width,im.height,im.width*4),tc.BC7EncSettings.from_profile('alpha_basic'))
+    import texture_compression
+    return texture_compression.thumbnail(im)
+
 
 def encode(im,progress=lambda message:None,*,profile='slow',mipmaps=True):
-    im=im.convert('RGBA');parts=[]
-    settings=tc.BC7EncSettings.from_profile(profile)
-    width,height=im.size
-    if (width,height) not in [(512,4096),(1024,8192),(2048,16384)]:
+    if im.size not in [(512,4096),(1024,8192),(2048,16384)]:
         raise ValueError('Unsupported deck atlas dimensions.')
-    levels=max(width,height).bit_length()-1 if mipmaps else 1
-    total=sum(max(1,((width>>n)+3)//4)*max(1,((height>>n)+3)//4)*16 for n in range(levels))
-    completed=0
-    for level in range(levels):
-        progress(f'Preparing texture detail {level+1} of {levels}…')
-        w=max(1,width>>level);h=max(1,height>>level)
-        mip=im.resize((w,h),Image.Resampling.LANCZOS) if level else im
-        if w<4 or h<4:
-            pad=Image.new('RGBA',(max(4,w),max(4,h)))
-            for y in range(pad.height):
-                for x in range(pad.width):pad.putpixel((x,y),mip.getpixel((min(x,w-1),min(y,h-1))))
-            mip=pad
-        strips=[]
-        for y in range(0,mip.height,256):
-            strip=mip.crop((0,y,mip.width,min(y+256,mip.height)))
-            compressed=tc.compress_blocks_bc7(tc.RGBASurface(strip.tobytes(),strip.width,strip.height,strip.width*4),settings)
-            strips.append(compressed)
-            completed+=len(compressed)
-            progress(f'Compressing texture: {completed/total:.0%} (detail {level+1}/{levels})')
-        data=b''.join(strips)
-        assert len(data)==max(1,(w+3)//4)*max(1,(h+3)//4)*16
-        parts.append(data)
-    result=b''.join(parts)
-    assert len(result)==sum(max(1,((width>>n)+3)//4)*max(1,((height>>n)+3)//4)*16 for n in range(levels))
-    return result
+    import texture_compression
+    return texture_compression.encode(im,progress,profile=profile,mipmaps=mipmaps)
+
 
 def split_mod(b):
     table,count=struct.unpack_from('<QI',b,12)

@@ -251,6 +251,8 @@ class Creator(QMainWindow):
         self.live_placement = False
         self.last_detail_key = None
         self.pending = None
+        self.frame_worker = False
+        self.frame_renderer = self.frame_renderer_key = self.frame_request_key = None
         self.renderer = self.detail_renderer = self.clip = None
         self.gif_cache = {}
         self.started = time.monotonic()
@@ -1044,6 +1046,7 @@ class Creator(QMainWindow):
         self.gif_cache.clear()
         self.last_key = None
         if clear:
+            self.frame_renderer = self.frame_renderer_key = None
             self.last_detail_key = None
             self.live_placement = False
             self.placement_sources = self.placement_source_key = None
@@ -1173,7 +1176,20 @@ class Creator(QMainWindow):
     def poll(self):
         while not self.events.empty():
             kind,revision,result = self.events.get()
-            if kind in ('preview','preview_error'):
+            if kind=='frame':
+                self.frame_worker = False
+                key, image, error = result
+                dragging = self.angle.slider.isSliderDown()
+                wanted = self.frame_request_key
+                acceptable = key == wanted or (dragging and wanted is not None and key[2:] == wanted[2:])
+                if revision == self.revision and acceptable:
+                    if error:
+                        self.last_key = key
+                        self.status.setText('Preview: '+error)
+                    else:
+                        self.present_frame(image, key)
+                self.render()
+            elif kind in ('preview','preview_error'):
                 self.worker = False
                 if revision==self.revision:
                     if kind=='preview_error':
@@ -1288,9 +1304,29 @@ class Creator(QMainWindow):
         mode = self.current()['mode']
         angle,bands = self.angle.value()/100,self.bands.value()/100
         gif_index = self.clip.frame_index(((time.monotonic()-self.started)*1000)%self.clip.duration_ms) if self.clip else None
-        size = (180,720) if not self.large else (320,1280)
+        size = (120,480) if self.angle.slider.isSliderDown() else (180,720) if not self.large else (320,1280)
         key = (self.revision,angle,bands,self.detail_toggle.isChecked(),gif_index,size,self.live_placement)
+        self.frame_request_key = key
         if self.last_key==key:
+            return
+        if self.renderer is not None and not self.clip and not self.live_placement:
+            if self.display_revision != self.revision or self.frame_worker:
+                return
+            renderer_key = (self.renderer, bands)
+            if self.frame_renderer_key != renderer_key:
+                self.frame_renderer = copy.copy(self.renderer)
+                self.frame_renderer.settings = self.renderer.settings.copy()
+                self.frame_renderer.set_lens_strength(bands)
+                self.frame_renderer_key = renderer_key
+            snapshot = self.frame_renderer
+            self.frame_worker = True
+            def draw():
+                try:
+                    result = (key, snapshot.render(angle, size), None)
+                except Exception as exc:
+                    result = (key, None, str(exc))
+                self.events.put(('frame', key[0], result))
+            threading.Thread(target=draw, daemon=True).start()
             return
         if self.clip:
             if gif_index not in self.gif_cache:
@@ -1305,6 +1341,11 @@ class Creator(QMainWindow):
             image = self.renderer.render(angle,size)
         else:
             return
+        self.present_frame(image, key)
+
+    def present_frame(self, image, key):
+        mode = self.current()['mode']
+        angle, bands = key[1:3]
         self.last_key = key
         self.preview_title.setText('Deck preview · positioning' if self.live_placement and not self.clip else 'Deck preview')
         image = board_preview.map_artwork(image)

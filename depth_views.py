@@ -153,12 +153,45 @@ def view(image, depth, angle, strength=.04, convergence=.5):
             out[b:b+3]=bytes(colors[x]) if x in colors else rgb[a:a+3]
     return Image.frombytes('RGB',(w,h),bytes(out))
 
+_view_cache = None
+
+
+def _view_job(job):
+    image, depth, angle, strength, convergence = job
+    return view(image, depth, angle, strength, convergence)
+
+
 def views(image, depth, strength=.04, convergence=.5, progress=lambda message:None):
-    result=[]
-    for i in range(VIEW_COUNT):
-        progress(f'Generating 3D view {i+1} of {VIEW_COUNT}...')
-        result.append(view(image,depth,i*2/(VIEW_COUNT-1)-1,strength,convergence))
+    from concurrent.futures import ProcessPoolExecutor
+    import multiprocessing
+    import hashlib
+    import os
+    global _view_cache
+    # Cached images are copied out so callers cannot change a later export.
+    key = (image.size, image.mode, depth.size, depth.mode, float(strength), float(convergence),
+           hashlib.sha256(image.tobytes()).digest(), hashlib.sha256(depth.tobytes()).digest())
+    cached = _view_cache
+    if cached is not None and key == cached[0]:
+        progress('Reusing unchanged depth views...')
+        return [frame.copy() for frame in cached[1]]
+    jobs = [(image, depth, i*2/(VIEW_COUNT-1)-1, strength, convergence) for i in range(VIEW_COUNT)]
+    result = []
+    if image.width * image.height >= 512 * 1024 and strength:
+        # The depth renderer is Python-heavy, unlike the native BC7 encoder.
+        progress('Preparing depth views...')
+        count = max(1, min(4, (os.cpu_count() or 2)-1))
+        with ProcessPoolExecutor(max_workers=count, mp_context=multiprocessing.get_context('spawn')) as pool:
+            for i, frame in enumerate(pool.map(_view_job, jobs)):
+                progress(f'Generating 3D view {i+1} of {VIEW_COUNT}...')
+                result.append(frame)
+    else:
+        for i, job in enumerate(jobs):
+            progress(f'Generating 3D view {i+1} of {VIEW_COUNT}...')
+            result.append(_view_job(job))
+    if sum(frame.width * frame.height * 3 for frame in result) <= 32 * 1024 * 1024:
+        _view_cache = (key, [frame.copy() for frame in result])
     return result
+
 
 def _paste_view_tile(atlas, image, origin, cell_size, horizontal_gutter):
     x, y = origin

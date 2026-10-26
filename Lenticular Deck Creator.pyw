@@ -1,6 +1,8 @@
 import sys
 
 if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.freeze_support()
     if len(sys.argv) == 3 and sys.argv[1] == '--install-update':
         try:
             from updates import apply_update
