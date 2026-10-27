@@ -2,6 +2,12 @@
 
 Create Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
 
+## Direct installable export (local development)
+
+The visible Export as selector offers Mod ZIP, Install to game, and FBMOD. The export buttons follow the selected option, which is remembered between sessions. ZIP export runs a selected shader-capable Studio command-line compiler in the background; the editor never opens and no manual FBMOD import/deploy is needed. It still requires that compiler to be installed. The compiler is not bundled or downloaded.
+
+Choose the game folder and compiler once; File > Export setup changes them later. ZIP export does not install or enable anything. Install to game asks for a folder name every time, then writes the deck pack straight into the selected game’s Mods folder; close the game and launcher first, then enable the mod in the launcher. Updates back up unchanged Deck Tool exports and refuse to replace unrelated or externally edited files. Import it through the ReSkate launcher, or extract its mod folder into Mods. Compilation and packaging are staged, and a failed build preserves the previous exported ZIP. SDEC remains a separate Thunderstore install.
+
 ## SDEC required
 
 Effect decks require [SDEC: Sofis Deck Effect Core](https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/). Enable one current copy alongside your artwork packs. New tool exports contain the deck content only.

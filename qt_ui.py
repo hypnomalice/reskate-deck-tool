@@ -12,12 +12,12 @@ import numpy as np
 from pathlib import Path
 
 from PIL import Image, ImageOps
-from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, Signal
+from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, Signal, QSettings
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPalette, QImage
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QFormLayout, QLabel, QPushButton, QToolButton, QLineEdit, QComboBox, QSlider,
     QDoubleSpinBox, QAbstractSpinBox, QCheckBox, QGroupBox, QScrollArea, QSplitter,
-    QListWidget, QTabBar, QFileDialog, QColorDialog, QMessageBox, QDialog, QTextBrowser, QTabWidget)
+    QListWidget, QTabBar, QInputDialog, QFileDialog, QColorDialog, QMessageBox, QDialog, QTextBrowser, QTabWidget)
 
 import creator_engine as engine
 import animation
@@ -358,7 +358,7 @@ class Creator(QMainWindow):
 
     def set_busy(self,busy):
         self.busy = busy
-        for widget in (self.settings,self.tabs,self.add_button,self.export_button,self.pack_button,self.strength,self.bands,self.convergence,self.invert,self.placement,self.ghost_box,*self.layer_depth_controls):
+        for widget in (self.settings,self.tabs,self.add_button,self.export_button,self.pack_button,self.export_mode,self.export_change,self.strength,self.bands,self.convergence,self.invert,self.placement,self.ghost_box,*self.layer_depth_controls):
             widget.setEnabled(not busy)
         if not busy:
             self.update_mode()
@@ -378,19 +378,99 @@ class Creator(QMainWindow):
         except ValueError as exc:
             QMessageBox.warning(self,'Check the decks',str(exc))
             return
-        title = 'Lenticular Deck Pack' if all_decks else projects[0]['name']
-        path,_ = QFileDialog.getSaveFileName(self,'Export mod',title+'.fbmod','ReSkate mod (*.fbmod)')
-        if not path:
-            return
+        title = (self.path.stem if self.path else 'Deck Pack') if all_decks else projects[0]['name']
+        mode = self.export_mode.currentData()
+        folder_export = mode == 'game'
+        native = mode != 'fbmod'
+        if folder_export:
+            folder_name,accepted = QInputDialog.getText(self,'Name your deck pack','Folder name in Mods:',text=title)
+            if not accepted:
+                return
+            if not folder_name.strip():
+                QMessageBox.warning(self,'Name your deck pack','Enter a folder name before installing.')
+                return
+            title = folder_name.strip()
+        native_options = None
+        if native:
+            native_options = self.native_export_options()
+            if native_options is None:
+                return
+            self.update_export_controls()
+        if folder_export:
+            import native_export
+            path = str(Path(native_options['game_root'])/'Mods'/native_export.mod_name(title))
+            try:
+                native_export.check_folder(path)
+            except ValueError as error:
+                QMessageBox.warning(self,'Cannot replace this deck pack',str(error))
+                return
+        else:
+            suffix = '.zip' if mode == 'zip' else '.fbmod'
+            file_filter = 'Mod ZIP (*.zip)' if mode == 'zip' else 'FBMOD for Studio (*.fbmod)'
+            path,_ = QFileDialog.getSaveFileName(self,'Export deck pack',title+suffix,file_filter)
+            if not path:
+                return
+            if not Path(path).suffix:
+                path += suffix
         self.set_busy(True)
         self.status.setText('Preparing export…')
         def run():
             try:
-                result = engine.export_pack(projects,path,lambda message:self.events.put(('status',0,message)),title=title,author=projects[0].get('author',''),shared_runtime=True)
+                progress = lambda message:self.events.put(('status',0,message))
+                if native:
+                    import native_export
+                    exporter = native_export.export_folder if folder_export else native_export.export_zip
+                    result = exporter(projects,path,progress,title=Path(path).name if folder_export else Path(path).stem,author=projects[0].get('author',''),**native_options)
+                else:
+                    result = engine.export_pack(projects,path,progress,title=title,author=projects[0].get('author',''),shared_runtime=True)
                 self.events.put(('export',0,str(result)))
             except Exception as exc:
                 self.events.put(('error',0,str(exc)))
         threading.Thread(target=run,daemon=True).start()
+
+    def export_mode_changed(self):
+        QSettings('hypnomalice','ReSkate Deck Tool').setValue('export/mode',self.export_mode.currentData())
+        self.update_export_controls()
+
+    def update_export_controls(self):
+        mode = self.export_mode.currentData()
+        self.export_button.setText({'zip':'Export ZIP','game':'Install deck','fbmod':'Export FBMOD'}[mode])
+        self.pack_button.setText(('Install all' if mode=='game' else 'Export all')+f' ({len(self.decks)})')
+        self.export_hint.setText({'zip':'Ready to install or share.','game':'Close the game and launcher before installing.','fbmod':'For editing in Studio.'}[mode])
+        game = str(QSettings('hypnomalice','ReSkate Deck Tool').value('native/game',''))
+        self.export_destination.setText(str(Path(game)/'Mods') if game else 'Choose your game folder on first install.')
+        self.export_destination_row.setVisible(mode=='game')
+
+    def change_export_game(self):
+        self.native_export_options(True)
+        self.update_export_controls()
+
+    def native_export_options(self, force=False):
+        import native_export
+        preferences = QSettings('hypnomalice','ReSkate Deck Tool')
+        game = str(preferences.value('native/game',''))
+        compiler = str(preferences.value('native/compiler',''))
+        if force or not (Path(game)/'Skate.exe').is_file() or not (Path(game)/'Data/layout.toc').is_file():
+            QMessageBox.information(self,'Native mod export',
+                'This exports compiled mod files directly, without opening Studio. Select your Skate folder and the reskate_cli.exe from your shader-capable Studio installation once. The compiler is still required; it is not bundled or downloaded.')
+            game = QFileDialog.getExistingDirectory(self,'Choose your Skate game folder',game)
+            if not game:
+                return None
+        if force or not Path(compiler).is_file():
+            candidates = [Path(game)/folder/'reskate_cli.exe' for folder in ('Studio','Studio with Shaders')]
+            compiler = '' if force else str(next((p for p in candidates if p.is_file()),''))
+            if not compiler:
+                compiler,_ = QFileDialog.getOpenFileName(self,'Choose Studio reskate_cli.exe',filter='Studio compiler (reskate_cli.exe)')
+            if not compiler:
+                return None
+        try:
+            native_export.validate_inputs(game,compiler)
+        except ValueError as error:
+            QMessageBox.warning(self,'Native export setup',str(error))
+            return None
+        preferences.setValue('native/game',game)
+        preferences.setValue('native/compiler',compiler)
+        return dict(game_root=game,compiler=compiler)
 
     def update_fbmods(self):
         if self.busy:
@@ -535,11 +615,31 @@ class Creator(QMainWindow):
         toolbar.addStretch()
         self.update_button = button('Update available',self.open_update,toolbar)
         self.update_button.hide()
-        self.export_button = button('Export FBMOD',lambda:self.export(False),toolbar)
-        self.pack_button = button('Export all',lambda:self.export(True),toolbar)
-        self.pack_button.setObjectName('primary')
-        help_button('Export FBMOD saves the selected deck. Export all puts every deck in this workspace into one FBMOD.',toolbar)
         outer.addLayout(toolbar)
+        export_row = QHBoxLayout()
+        export_row.addWidget(QLabel('Export as'))
+        self.export_mode = QComboBox()
+        for label,key in [('Mod ZIP','zip'),('Install to game','game'),('FBMOD','fbmod')]:
+            self.export_mode.addItem(label,key)
+        preferences = QSettings('hypnomalice','ReSkate Deck Tool')
+        self.export_mode.setCurrentIndex(max(0,self.export_mode.findData(preferences.value('export/mode','zip'))))
+        self.export_mode.currentIndexChanged.connect(self.export_mode_changed)
+        export_row.addWidget(self.export_mode)
+        self.export_hint = QLabel()
+        export_row.addWidget(self.export_hint,1)
+        self.export_button = button('Export ZIP',lambda:self.export(False),export_row)
+        self.pack_button = button('Export all',lambda:self.export(True),export_row)
+        self.pack_button.setObjectName('primary')
+        outer.addLayout(export_row)
+        self.export_destination_row = QWidget()
+        destination_layout = QHBoxLayout(self.export_destination_row)
+        destination_layout.setContentsMargins(0,0,0,0)
+        self.export_destination = QLabel()
+        self.export_destination.setWordWrap(True)
+        destination_layout.addWidget(self.export_destination,1)
+        self.export_change = button('Change…',self.change_export_game,destination_layout)
+        outer.addWidget(self.export_destination_row)
+        self.update_export_controls()
         tabs = QHBoxLayout()
         self.tabs = QTabBar()
         self.tabs.setExpanding(False)
@@ -819,7 +919,7 @@ class Creator(QMainWindow):
         footer.addWidget(self.status,1)
         footer.addWidget(QLabel(self.quote))
         outer.addLayout(footer)
-        for name,items in [('File',[('Open project…',self.open_project),('Save',self.save_project),('Convert older packs for SDEC…',self.update_fbmods)]),('Deck',[('Add deck',self.add_deck),('Remove selected',lambda:self.remove_deck(self.selected))]),('View',[('Enlarge preview',self.enlarge)]),('Help',[('Guide',self.guide)])]:
+        for name,items in [('File',[('Open project…',self.open_project),('Save',self.save_project),('Export setup…',lambda:self.native_export_options(True)),('Convert older packs for SDEC…',self.update_fbmods)]),('Deck',[('Add deck',self.add_deck),('Remove selected',lambda:self.remove_deck(self.selected))]),('View',[('Enlarge preview',self.enlarge)]),('Help',[('Guide',self.guide)])]:
             menu = self.menuBar().addMenu(name)
             for text,action in items:
                 menu.addAction(text,action)
@@ -853,7 +953,7 @@ class Creator(QMainWindow):
             self.tabs.addTab(d['name'] or 'Untitled deck')
         self.tabs.setCurrentIndex(self.selected)
         self.tabs.blockSignals(False)
-        self.pack_button.setText(f'Export all ({len(self.decks)})')
+        self.update_export_controls()
 
     def apply_deck(self):
         self.loading = True
@@ -1304,7 +1404,10 @@ class Creator(QMainWindow):
                 self.set_busy(False)
                 if kind=='export':
                     self.status.setText('Saved: '+result)
-                    QMessageBox.information(self,'Export complete','Saved your deck FBMOD. Requires SDEC: Sofis Deck Effect Core. Install the matching SDEC build once, then import this deck in Studio.\n\nhttps://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/\n\n'+result)
+                    instruction = ('Deck pack installed. Enable it in the ReSkate launcher. Previous tool exports are backed up in .deck-tool-backups beside the mod folder.'
+                        if Path(result).is_dir() else 'Install this ZIP through the ReSkate launcher, or extract its mod folder into Mods. No manual Studio import is needed.'
+                        if Path(result).suffix.lower()=='.zip' else 'Import this FBMOD in Studio when you want to build or edit it.')
+                    QMessageBox.information(self,'Export complete',instruction+'\n\nRequires SDEC, installed separately from Thunderstore. The tool does not download or bundle it.\n\nhttps://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/\n\n'+result)
                 else:
                     QMessageBox.critical(self,'Operation failed',result)
             elif kind=='depth':

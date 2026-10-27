@@ -118,8 +118,54 @@ def check(folder, projects):
             if time.monotonic()-start>60: raise AssertionError(window.status.text())
         assert window.active_preview_renderer() is window.export_renderer
         window.grab().save(str(Path(folder)/'preview-export-texture.png'))
+        from unittest.mock import patch
+        from qt_ui import QFileDialog, QMessageBox, QInputDialog
+        exported = []
+        window.export_mode.setCurrentIndex(0)
+        def zip_export(projects, destination, progress, **options):
+            exported.append((projects,destination,options))
+            return Path(destination)
+        with patch.object(QFileDialog,'getSaveFileName',return_value=(str(Path(folder)/'Native UI Check.zip'),'Installable ReSkate ZIP (*.zip)')), \
+             patch.object(window,'native_export_options',return_value=dict(game_root='test-game',compiler='test-compiler')), \
+             patch('native_export.export_zip',side_effect=zip_export), \
+             patch.object(QMessageBox,'information') as message:
+            window.export(False)
+            start=time.monotonic()
+            while window.busy:
+                app.processEvents();time.sleep(.005)
+                if time.monotonic()-start>15:raise AssertionError('ZIP export UI timed out')
+            assert len(exported)==1 and len(exported[0][0])==1
+            assert exported[0][2]['title']=='Native UI Check'
+            assert 'No manual Studio import' in message.call_args.args[2]
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix='folder-ui-',dir=folder) as native_parent:
+            def folder_export(projects,destination,progress,**options):
+                Path(destination).mkdir(parents=True)
+                exported.append((projects,destination,options))
+                return Path(destination)
+            window.export_mode.setCurrentIndex(1)
+            assert window.export_button.text()=='Install deck'
+            with patch.object(QInputDialog,'getText',return_value=('My Named Pack',True)), \
+                 patch.object(QFileDialog,'getSaveFileName',side_effect=AssertionError('Install must not ask for an export file')), \
+                 patch.object(window,'native_export_options',return_value=dict(game_root=native_parent,compiler='test-compiler')), \
+                 patch('native_export.export_folder',side_effect=folder_export), \
+                 patch.object(QMessageBox,'information') as message:
+                window.export(False)
+                start=time.monotonic()
+                while window.busy:
+                    app.processEvents();time.sleep(.005)
+                    if time.monotonic()-start>15:raise AssertionError('Folder export UI timed out')
+                assert len(exported)==2 and Path(exported[-1][1]).is_dir()
+                assert Path(exported[-1][1])==Path(native_parent)/'Mods'/'My Named Pack'
+                assert exported[-1][2]['title']=='My Named Pack'
+                assert 'Deck pack installed' in message.call_args.args[2]
+            with patch.object(QInputDialog,'getText',return_value=('',False)), \
+                 patch.object(window,'native_export_options',side_effect=AssertionError('Cancelled install must stop')):
+                window.export(False)
+                assert not window.busy and len(exported)==2
+            window.export_mode.setCurrentIndex(0)
         return dict(frontend='Cutroom / Qt',preview_modes=modes,sliders=True,responsive_layout=True,
-                    view_switch=True,standard_deck_uv_mapping=True,camera_linked=True,export_texture_preview=True)
+                    view_switch=True,standard_deck_uv_mapping=True,camera_linked=True,export_texture_preview=True,native_zip_export=True,native_folder_export=True)
     finally:
         window.baseline = window.workspace()
         window.close()
