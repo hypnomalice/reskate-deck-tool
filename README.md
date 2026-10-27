@@ -1,8 +1,8 @@
-# ReSkate Deck Tool 1.4.4
+# ReSkate Deck Tool 1.4.5
 
 Create Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
 
-## Direct installable export (local development)
+## Direct installable export
 
 The visible Export as selector offers Mod ZIP, Install to game, and FBMOD. The export buttons follow the selected option, which is remembered between sessions. ZIP export runs a selected shader-capable Studio command-line compiler in the background; the editor never opens and no manual FBMOD import/deploy is needed. It still requires that compiler to be installed. The compiler is not bundled or downloaded.
 
