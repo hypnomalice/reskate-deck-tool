@@ -1,11 +1,26 @@
 """Image layouts for the tested metallic, ink and recessed-window finishes."""
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageColor
 from layer_atlas import encode_linear
 
 MODES = ('metal', 'ink', 'window')
 
-def pack(mode, graphic, second=None, object_image=None):
+def ink_mask(image, settings=None):
+    """Bake mask edits into the existing shader channel, shared by preview/export."""
+    cfg=settings or {}
+    strength=float(cfg.get('strength',1))
+    contrast=float(cfg.get('contrast',1))
+    if not np.isfinite(strength) or not 0<=strength<=1:
+        raise ValueError('Ink mask strength must be between 0 and 1.')
+    if not np.isfinite(contrast) or not 0<=contrast<=4:
+        raise ValueError('Ink mask contrast must be between 0 and 4.')
+    values=np.arange(256,dtype=float)/255
+    if cfg.get('invert',False):values=1-values
+    values=np.clip((values-.5)*contrast+.5,0,1)*strength
+    return image.convert('L').point(np.rint(values*255).astype(np.uint8).tolist())
+
+
+def pack(mode, graphic, second=None, object_image=None, ink=None):
     if mode not in MODES:
         raise ValueError('Choose Metallic Flakes, Ink Flow or Impossible Window.')
     atlas=Image.new('RGB',(512,4096))
@@ -27,7 +42,7 @@ def pack(mode, graphic, second=None, object_image=None):
         data=np.empty((2048,512,3),dtype=np.uint8)
         if mode=='ink':
             if second is None:raise ValueError('Choose a reveal mask for Ink Flow.')
-            mask=second.convert('L').resize((512,2048),Image.Resampling.LANCZOS)
+            mask=ink_mask(second,ink).resize((512,2048),Image.Resampling.LANCZOS)
             data[:,:,0]=np.asarray(mask.point([encode_linear(i/255) for i in range(256)]))
         else:data[:,:,0]=np.where(n%10000<400,255,0)
         data[:,:,1]=188
@@ -40,6 +55,16 @@ def pack(mode, graphic, second=None, object_image=None):
         draw.rectangle((i*128,0,i*128+127,63),fill=c)
     draw.rectangle((0,48,127,63),fill=({'metal':32,'ink':64,'window':180}[mode],128,255))
     draw.rectangle((128,48,255,63),fill=(0,188,0))
+    if mode=='ink' and ink and any(k in ink for k in ('background_colour','revealed_colour','showthrough')):
+        bg=ImageColor.getrgb(ink.get('background_colour','#242c42'))
+        fg=ImageColor.getrgb(ink.get('revealed_colour','#88c0d3'))
+        amount=float(ink.get('showthrough',0))
+        if not np.isfinite(amount) or not 0<=amount<=1:
+            raise ValueError('Graphic show-through must be between 0 and 1.')
+        draw.rectangle((128,48,255,63),fill=bg)
+        draw.rectangle((256,48,383,63),fill=fg)
+        # Blue + no green is an opt-in marker absent from every old Ink atlas.
+        draw.rectangle((384,48,511,63),fill=(encode_linear(amount),0,255))
     return atlas
 
 def render(renderer,angle,u,v,view_pose=None):
@@ -62,7 +87,14 @@ def render(renderer,angle,u,v,view_pose=None):
         field=.5+.18*np.sin(u*11+v*5)+.14*np.sin(u*7-v*13)
         reveal=np.clip((progress-field+.16)/.32,0,1)
         reveal=reveal*reveal*(3-2*reveal)*data[:,:,0]
-        return display(np.array([.018,.025,.055])+reveal[:,:,None]*np.array([.23,.5,.6]))
+        legacy=np.array([.018,.025,.055])+reveal[:,:,None]*np.array([.23,.5,.6])
+        controls=renderer.sample(.875,56/4096)
+        if controls[1]<.05 and controls[2]>.9:
+            background=renderer.sample(.375,56/4096)
+            foreground=renderer.sample(.625,56/4096)
+            ink_rgb=background+reveal[:,:,None]*(foreground-background)
+            return display(ink_rgb*(1-controls[0])+rgb*controls[0])
+        return display(legacy)
     # Port of the accepted authored shader's .7-deep corridor, not a fitted
     # background shift. The front, interior faces and object use distinct UVs.
     u,v=np.broadcast_arrays(u,v)

@@ -22,24 +22,26 @@ def map_artwork(image, size=None):
                         box=(left*w, top*h, right*w, bottom*h))
 
 
-# Procedural dimensions fitted to the supplied plain-control silhouette and side view.
-DECK_LENGTH = 3.82
+# Procedural dimensions fitted to Calibration-1793147525 front silhouette.
+# 693 px length / 184 px body width; hardware positions within about 2 px.
+# Only aggregate proportions are stored, not capture pixels or a game mesh.
+DECK_LENGTH = 3.77
 CAMERA_DISTANCE = 24.0
-NOSE_CAP, NOSE_POWER = .5, 9.2
-TAIL_CAP, TAIL_POWER = .175, 1.75
+NOSE_CAP, NOSE_POWER = .499, 9.32
+TAIL_CAP, TAIL_POWER = .635, 10.0
 NOSE_KICK, TAIL_KICK = .16, .13
 PIVOT_DEPTH = .08
-TRUCK_CENTRES = (.228, .774)  # axle positions along the visible deck
-PLATE_CENTRES = (.242, .759)
-PLATE_WIDTH, PLATE_LENGTH = .28, .083
-BOLT_HALF_WIDTH, BOLT_HALF_LENGTH = .112, .027
+TRUCK_CENTRES = (.228, .786)  # axle positions along the visible deck
+PLATE_CENTRES = (.241, .776)
+PLATE_WIDTH, PLATE_LENGTH = .28, .090
+BOLT_HALF_WIDTH, BOLT_HALF_LENGTH = .100, .033
 
 
 def surface(u, v):
     """Procedural standard-deck profile, calibrated from aggregate capture measurements."""
     end = max(0., 1-v/NOSE_CAP) if v < .5 else max(0., 1-(1-v)/TAIL_CAP)
     power = NOSE_POWER if v < .5 else TAIL_POWER
-    half_width = .5*math.sqrt(max(.0001, 1-end**power))
+    half_width = .5*math.sqrt(max(0., 1-end**power))
     x = (u*2-1)*half_width
     y = (v-.5)*DECK_LENGTH
     kick = NOSE_KICK*max(0.,(.24-v)/.24)**2 + TAIL_KICK*max(0.,(v-.77)/.23)**2

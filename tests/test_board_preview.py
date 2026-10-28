@@ -48,13 +48,26 @@ class CaptureShapeTests(unittest.TestCase):
     def test_visible_nose_and_tail_match_capture_proportions(self):
         self.assertTrue(.71 < surface(1,.04)[0]*2 < .76)
         self.assertTrue(.94 < surface(1,.12)[0]*2 < .98)
-        self.assertTrue(.57 < surface(1,.96)[0]*2 < .65)
+        self.assertTrue(.67 < surface(1,.96)[0]*2 < .71)
         from board_preview import CAMERA_DISTANCE, TRUCK_CENTRES, PLATE_CENTRES, PLATE_WIDTH, BOLT_HALF_WIDTH
         self.assertGreater(CAMERA_DISTANCE,15)
         self.assertAlmostEqual(TRUCK_CENTRES[0],.228,delta=.005)
         self.assertGreater(PLATE_CENTRES[0],TRUCK_CENTRES[0])
         self.assertLess(PLATE_CENTRES[1],TRUCK_CENTRES[1])
         self.assertLess(2*BOLT_HALF_WIDTH,PLATE_WIDTH)
+        self.assertAlmostEqual(TRUCK_CENTRES[1],.786,delta=.003)
+
+    def test_calibration_silhouette_stays_within_two_pixels(self):
+        from board_preview import DECK_LENGTH
+        self.assertAlmostEqual(DECK_LENGTH,693/184,delta=.01)
+        # Opaque front silhouette, away from trucks; widths in the 768px capture.
+        measured=[(.02,104),(.04,135),(.08,165),(.12,176),(.16,182),
+                  (.4,184),(.5,184),(.6,184),(.88,173),(.92,158),(.96,127),(.98,97)]
+        for v,width in measured:
+            with self.subTest(v=v):
+                self.assertAlmostEqual(2*surface(1,v)[0]*184,width,delta=2)
+        self.assertEqual(surface(1,0)[0],0)
+        self.assertEqual(surface(1,1)[0],0)
 
 
 class LensViewCalibrationTests(unittest.TestCase):

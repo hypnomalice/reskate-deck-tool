@@ -207,7 +207,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             graphic=depth_views.layer_image(a,fit) if mode=='window' else artwork(a,fit,background)
             second=(depth_views.depth_image(b,fit) if mode=='ink' else artwork(b,fit,background)) if mode!='metal' else None
             obj=depth_views.layer_image(project['middle_image'],fit) if mode=='window' and project.get('middle_image') else None
-            packed=finish_atlas.pack(mode,graphic,second,obj)
+            packed=finish_atlas.pack(mode,graphic,second,obj,ink=project.get('ink'))
             texture=encode(packed,progress,mipmaps=False)
             preview=AtlasPreview(packed,mode)
             thumb=thumbnail(preview.render(-.4,(256,1024)),preview.render(.4,(256,1024)),custom,background=background,label={'metal':'METALLIC','ink':'INK FLOW','window':'WINDOW'}[mode])

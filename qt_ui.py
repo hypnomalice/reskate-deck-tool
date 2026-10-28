@@ -172,6 +172,7 @@ class Board(QWidget):
     def paintEvent(self,event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
         painter.fillRect(self.rect(),QColor('#191c20'))
         if self.view_mode=='3D' and self.frame is not None:
             from board_view import draw_3d
@@ -190,7 +191,7 @@ class Board(QWidget):
             if i==0:path.moveTo(point)
             else:path.lineTo(point)
         path.closeSubpath()
-        painter.setPen(QPen(QColor(self.wood),5))
+        painter.setPen(QPen(QColor(self.wood),2))
         painter.setBrush(QColor('#30353b'))
         painter.drawPath(path)
         if self.frame is not None:
@@ -889,6 +890,16 @@ class Creator(QMainWindow):
         self.liquid_thickness=Adjustment('Thickness (visual)',25,0,100,tip='Slower, smaller ripples for a syrup-like appearance. This does not simulate physical viscosity or persistent settling.')
         for control in (self.liquid_cloud,self.liquid_depth,self.liquid_amount,self.liquid_thickness):
             effects.addWidget(control);control.changed.connect(self.changed)
+        self.ink_background=button('Background ink colour...',lambda:self.choose_ink_colour('background_colour'),effects)
+        self.ink_revealed=button('Revealed ink colour...',lambda:self.choose_ink_colour('revealed_colour'),effects)
+        self.ink_showthrough=Adjustment('Graphic show-through',0,0,100,tip='0% shows only the two ink colours; 100% shows the original graphic. Applies to both ink states.')
+        effects.addWidget(self.ink_showthrough);self.ink_showthrough.changed.connect(self.changed)
+        self.ink_strength=Adjustment('Mask strength',100,0,100,tip='Reduce how strongly white mask areas receive the ink reveal. Saved into the exported mask.')
+        self.ink_contrast=Adjustment('Mask contrast',100,0,400,tip='Increase to sharpen grey mask boundaries; decrease for a softer mask. 100% preserves the original mask.')
+        self.ink_invert=QCheckBox('Invert reveal mask')
+        for control in (self.ink_strength,self.ink_contrast):
+            effects.addWidget(control);control.changed.connect(self.changed)
+        effects.addWidget(self.ink_invert);self.ink_invert.toggled.connect(self.changed)
         self.finish_hint=QLabel()
         self.finish_hint.setWordWrap(True)
         self.finish_hint.setAlignment(Qt.AlignTop|Qt.AlignLeft)
@@ -938,6 +949,7 @@ class Creator(QMainWindow):
         for kind,(method,mask_button,mask_name,colour_button,tolerance) in self.ghost_area_controls.items():
             cfg=d.setdefault('ghost',{}).setdefault(kind,{})
             cfg.update(selection=('all','mask','colour')[method.currentIndex()],tolerance=tolerance.value()/100)
+        d['ink']=dict(background_colour=d.get('ink',{}).get('background_colour','#242c42'),revealed_colour=d.get('ink',{}).get('revealed_colour','#88c0d3'),showthrough=self.ink_showthrough.value()/100,strength=self.ink_strength.value()/100,contrast=self.ink_contrast.value()/100,invert=self.ink_invert.isChecked())
         d['layer_depths']=[control.value()/100 for control in self.layer_depth_controls]
         d['liquid']=dict(colour=d.get('liquid',{}).get('colour','#9630d8'),cloudiness=self.liquid_cloud.value()/100,depth=.025+.155*self.liquid_depth.value()/100,amount=self.liquid_amount.value()/100,thickness=self.liquid_thickness.value()/100)
 
@@ -968,6 +980,11 @@ class Creator(QMainWindow):
         for key,default in [('strength',.04),('convergence',.5),('bands',1)]:
             getattr(self,key).set_value(settings.get(key,default)*100)
         self.invert.setChecked(settings.get('invert',False))
+        ink=d.get('ink',{})
+        self.ink_showthrough.set_value(ink.get('showthrough',0)*100)
+        self.ink_strength.set_value(ink.get('strength',1)*100)
+        self.ink_contrast.set_value(ink.get('contrast',1)*100)
+        self.ink_invert.setChecked(ink.get('invert',False))
         neon=d.get('neon',{})
         self.neon_method.setCurrentIndex(1 if neon.get('selection')=='colour' else 0)
         self.neon_tolerance.set_value(neon.get('tolerance',.15)*100)
@@ -1035,6 +1052,8 @@ class Creator(QMainWindow):
         self.bands.setVisible(mode in ('depth','layers') and self.lenticular.isChecked())
         for w in (self.strength,self.convergence,self.invert):
             w.setVisible(mode not in ('classic','metal','ink','window','liquid','neon') and not (three and w==self.convergence))
+        for control in (self.ink_background,self.ink_revealed,self.ink_showthrough,self.ink_strength,self.ink_contrast,self.ink_invert):
+            control.setVisible(mode=='ink');control.setEnabled(not self.busy)
         self.ghost_box.setVisible(mode=='ghost')
         for kind,(method,mask_button,mask_name,colour_button,tolerance) in self.ghost_area_controls.items():
             cfg=self.current().get('ghost',{}).get(kind,{})
@@ -1046,7 +1065,7 @@ class Creator(QMainWindow):
         self.finish_hint.setText({'classic':'Choose two to eight pictures, then use Move up / Move down to set their viewing order. Fine lens bands and slight overlap match the original lenticular effect.',
             'neon':'White mask areas glow in the artwork colour; black stays unlit. Greys reduce the glow. The colour picker creates a mask automatically. Preview glow is illustrative; game bloom varies.',
             'metal':'Sparkle changes with viewing angle. Choose one graphic image.',
-            'ink':'White areas of the reveal mask receive the ink effect; black areas retain the graphic.',
+            'ink':'The mask controls the transition between background and revealed ink. Graphic show-through blends your artwork into both colours. Custom colours require SDEC core 1.4.0 or the updated PSDEC package.',
             'liquid':'The front PNG stays on the outer face. Transparent areas reveal the liquid and background; opaque areas cast an internal approximate shadow.',
             'window':'Use a transparent front frame to reveal the recessed background. The optional object sits between them.'}.get(mode,''))
         self.convergence.title.setText('Background motion' if mode=='layers' else 'Stationary depth')
@@ -1067,6 +1086,12 @@ class Creator(QMainWindow):
         cfg=self.current().setdefault('ghost',{}).setdefault(kind,{})
         colour=QColorDialog.getColor(QColor(cfg.get('colour','#ffffff')),self,'Choose artwork colour for '+kind)
         if colour.isValid():cfg['colour']=colour.name();self.changed()
+
+    def choose_ink_colour(self,key):
+        defaults={'background_colour':'#242c42','revealed_colour':'#88c0d3'}
+        cfg=self.current().setdefault('ink',{})
+        colour=QColorDialog.getColor(QColor(cfg.get(key,defaults[key])),self,'Choose '+('background' if key=='background_colour' else 'revealed')+' ink colour')
+        if colour.isValid():cfg[key]=colour.name();self.changed()
 
     def choose_neon_colour(self):
         colour=QColorDialog.getColor(QColor(self.current().get('neon',{}).get('colour','#00dfff')),self,'Choose artwork colour to glow')
@@ -1266,7 +1291,7 @@ class Creator(QMainWindow):
                         thumbs=[preview.render(a,(128,512)) for a in (-.4,.4)]
                     elif d['mode'] in ('metal','ink','window'):
                         import finish_atlas
-                        atlas=finish_atlas.pack(d['mode'],images[0],images[1] if len(images)>1 else None,images[2] if len(images)>2 else None)
+                        atlas=finish_atlas.pack(d['mode'],images[0],images[1] if len(images)>1 else None,images[2] if len(images)>2 else None,ink=d.get('ink'))
                         preview_mode=d['mode']
                         preview=AtlasPreview(atlas,preview_mode)
                         thumbs=[preview.render(a,(128,512)) for a in (-.4,.4)]

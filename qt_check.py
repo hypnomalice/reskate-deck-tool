@@ -49,6 +49,16 @@ def check(folder, projects):
                 assert window.renderer.mode=='layers3'
                 assert window.placement_choice.count()==3
                 assert all(c.isVisible() for c in window.layer_depth_controls)
+            if window.current()['mode']=='ink':
+                assert all(c.isVisible() for c in (window.ink_strength,window.ink_contrast,window.ink_invert))
+                window.ink_strength.spin.setValue(65)
+                window.ink_contrast.spin.setValue(175)
+                window.ink_invert.setChecked(True)
+                window.ink_showthrough.spin.setValue(35)
+                cfg=window.workspace()['decks'][index]['ink']
+                assert cfg==dict(strength=.65,contrast=1.75,invert=True,showthrough=.35,background_colour='#242c42',revealed_colour='#88c0d3')
+                window.apply_deck()
+                assert window.ink_strength.value()==65 and window.ink_invert.isChecked()
             if window.current()['mode']=='liquid':
                 assert window.renderer.mode=='liquid'
                 assert all(c.isVisible() for c in (window.liquid_colour,window.liquid_cloud,window.liquid_depth,window.liquid_amount,window.liquid_thickness))
