@@ -103,7 +103,7 @@ def depth_image(path, fit='Stretch', size=(512,2048), invert=False):
         else:im=im.resize(size,Image.Resampling.BILINEAR)
     return ImageOps.invert(im) if invert else im
 
-def view(image, depth, angle, strength=.04, convergence=.5):
+def _reference_view(image, depth, angle, strength=.04, convergence=.5):
     """Forward splat with a depth buffer, then extend the farther hole boundary.
 
     A single photograph cannot reveal hidden surfaces. The horizontal fill is
@@ -153,6 +153,19 @@ def view(image, depth, angle, strength=.04, convergence=.5):
             out[b:b+3]=bytes(colors[x]) if x in colors else rgb[a:a+3]
     return Image.frombytes('RGB',(w,h),bytes(out))
 
+def view(image, depth, angle, strength=.04, convergence=.5):
+    """The same depth-buffer renderer for preview and export, accelerated when available."""
+    strength,convergence,angle=map(float,(strength,convergence,angle))
+    if not all(map(math.isfinite,(strength,convergence,angle))) or not 0<=strength<=1 or not 0<=convergence<=1:
+        raise ValueError('Depth strength, convergence or angle is out of range.')
+    image=image.convert('RGB')
+    depth=depth.resize(image.size,Image.Resampling.BILINEAR).convert('L')
+    if not strength or not angle:return image.copy()
+    from depth_native import render
+    result=render(image,depth,angle,strength,convergence)
+    return result if result is not None else _reference_view(image,depth,angle,strength,convergence)
+
+
 _view_cache = None
 
 
@@ -162,7 +175,7 @@ def _view_job(job):
 
 
 def views(image, depth, strength=.04, convergence=.5, progress=lambda message:None):
-    from concurrent.futures import ProcessPoolExecutor
+    from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
     import multiprocessing
     import hashlib
     import os
@@ -180,7 +193,11 @@ def views(image, depth, strength=.04, convergence=.5, progress=lambda message:No
         # The depth renderer is Python-heavy, unlike the native BC7 encoder.
         progress('Preparing depth views...')
         count = max(1, min(4, (os.cpu_count() or 2)-1))
-        with ProcessPoolExecutor(max_workers=count, mp_context=multiprocessing.get_context('spawn')) as pool:
+        from depth_native import backend
+        native=backend() is not None
+        executor=ThreadPoolExecutor if native else ProcessPoolExecutor
+        options={} if native else dict(mp_context=multiprocessing.get_context('spawn'))
+        with executor(max_workers=count, **options) as pool:
             for i, frame in enumerate(pool.map(_view_job, jobs)):
                 progress(f'Generating 3D view {i+1} of {VIEW_COUNT}...')
                 result.append(frame)

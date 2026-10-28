@@ -105,7 +105,7 @@ def check(folder):
         preview=AtlasPreview(engine.atlas(*images),'classic').render(.5,(40,160))
         assert preview.size==(40,160)
         quick_views=preview_depth.views(Image.open(images[0]),Image.open(depth),.04,.5)
-        assert len(quick_views)==8 and quick_views[0].size==(252,1004)
+        assert len(quick_views)==8 and quick_views[0].size==(512,2048)
         detail=AtlasPreview(engine.depth_views.pack(quick_views,1,balanced=True),'depth')
         assert detail.render(0,(80,80),(.375,.46875,.625,.53125)).size==(80,80)
         assert newer_release([],APP_VERSION) is None
@@ -177,6 +177,17 @@ def check(folder):
         report['advanced_modes']=['multi-image-lenticular','neon-mask','neon-colour']
         report['advanced_output']=str(advanced_output)
         report['content_only_export']=True
+        import depth_native
+        report['native_depth_backend']=depth_native.backend() is not None
+        if getattr(__import__('sys'),'frozen',False):assert report['native_depth_backend']
+        import depth_views
+        depth_views._view_cache=None
+        proof=Image.linear_gradient('L').resize((24,96))
+        art=Image.new('RGB',proof.size,'#2f8bb8')
+        shared=preview_depth.views(art,proof,.1,.5)
+        exported=depth_views.views(art,proof,.1,.5)
+        assert all(a.tobytes()==b.tobytes() for a,b in zip(shared,exported))
+        report['depth_preview_export_parity']=True
 
 
     except Exception:

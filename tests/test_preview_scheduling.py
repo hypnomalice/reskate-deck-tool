@@ -125,6 +125,20 @@ class PreviewSchedulingTests(unittest.TestCase):
         pixel=self.window.board.frame.toImage().pixelColor(25,0)
         self.assertEqual(pixel.red(),expected.getpixel((25,0))[0])
 
+    def test_2d_lighting_uses_front_pose_and_can_be_disabled(self):
+        import board_preview
+        from preview_lighting import shade
+        source=Image.new('RGB',(48,192),(110,140,160))
+        key=(self.window.revision,0,0,False,None,source.size,False,('2D',True,60,35),False)
+        lit=Creator.prepare_surface(source,key)
+        expected=shade(board_preview.map_artwork(source),0,0)
+        self.assertEqual(lit.tobytes(),expected.tobytes())
+        off=key[:7]+(('2D',False,60,35),)+key[8:]
+        self.assertEqual(Creator.prepare_surface(source,off).tobytes(),board_preview.map_artwork(source).tobytes())
+        self.assertNotEqual(lit.tobytes(),Creator.prepare_surface(source,off).tobytes())
+        self.window.preview_view_changed('2D')
+        self.assertTrue(self.window.studio_light.isEnabled())
+
     def test_studio_light_changes_preview_without_changing_project(self):
         w=self.window
         before=w.workspace()

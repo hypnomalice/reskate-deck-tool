@@ -1,4 +1,4 @@
-# ReSkate Deck Tool 1.4.5
+# ReSkate Deck Tool 1.4.7
 
 Create Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
 
@@ -13,6 +13,10 @@ Choose the game folder and compiler once; File > Export setup changes them later
 Effect decks require [SDEC: Sofis Deck Effect Core](https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/). Enable one current copy alongside your artwork packs. New tool exports contain the deck content only.
 
 Use SDEC 1.2.0 or newer for Neon and multi-picture lenticular. Install the core separately from Thunderstore; the tool does not download it. No custom game DLL is required.
+
+## Depth preview accuracy
+
+Depth Map previews now share the full-resolution export renderer, including overlap and hole filling. Smooth Depth and Ghost Rare use the native shader displacement sequence, and their 3D previews use the calibrated camera response. An optional tool-only native helper accelerates depth rendering while preserving the Python reference pixels; the Python renderer remains the fallback. See [1.4.7 release notes](docs/release-1.4.7.md).
 
 ## Calibrated deck previews
 

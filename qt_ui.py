@@ -784,8 +784,8 @@ class Creator(QMainWindow):
         row.addWidget(self.guides)
         self.studio_light = QCheckBox('Game room light')
         self.studio_light.setChecked(True)
-        self.studio_light.setEnabled(False)
-        self.studio_light.setToolTip('Colour and light calibrated from the supplied native menu captures. Different maps, HDR settings and effect materials can differ. Turn off to inspect unlit artwork.')
+        self.studio_light.setEnabled(True)
+        self.studio_light.setToolTip('Colour and light calibrated from the supplied native menu captures. Different maps, HDR settings and effect materials can differ. 2D uses face-on menu light; 3D follows the orbit. Turn off to inspect unlit artwork.')
         self.studio_light.toggled.connect(self.render_reset)
         row.addWidget(self.studio_light)
         self.detail_toggle = QCheckBox('Lens detail')
@@ -1520,7 +1520,7 @@ class Creator(QMainWindow):
             image = self.effect_frame(self.renderer,angle,size,key)
         else:
             return
-        if surface_state[0] == '3D' and surface_state[1]:
+        if surface_state[1]:
             if self.frame_worker:
                 return
             self.frame_worker = True
@@ -1536,11 +1536,11 @@ class Creator(QMainWindow):
 
     @staticmethod
     def effect_frame(renderer,angle,size,key,region=None):
-        if key[7][0]=='3D' and getattr(renderer,'mode',None) in ('classic','multi'):
+        if key[7][0]=='3D' and getattr(renderer,'mode',None) in ('classic','multi','depth','smooth','ghost'):
             return renderer.render(angle,size,region or (0,0,1,1),view_profile=board_preview.LENS_VIEW_PROFILE)
         if key[7][0]=='3D' and getattr(renderer,'mode',None) in ('metal','ink','window','liquid'):
             return renderer.render(angle,size,region or (0,0,1,1),view_pose=key[7][2:4])
-        if key[7][0]=='3D' and key[7][1] and getattr(renderer,'mode',None)=='neon':
+        if key[7][1] and getattr(renderer,'mode',None)=='neon':
             return renderer.render(angle,size,region or (0,0,1,1),material=True)
         return renderer.render(angle,size,region) if region is not None else renderer.render(angle,size)
 
@@ -1549,8 +1549,10 @@ class Creator(QMainWindow):
         emission=image.info.get('linear_emission')
         image=board_preview.map_artwork(image)
         view,lit,yaw,pitch=key[7]
-        if view == '3D' and lit:
+        if lit:
             from preview_lighting import shade, map_emission
+            # 2D is a face-on inspection, regardless of the last 3D orbit.
+            if view=='2D':yaw,pitch=0.,0.
             image=shade(image,yaw,pitch,emission=map_emission(emission,image.size) if emission is not None else None)
         return image
 
@@ -1645,7 +1647,7 @@ class Creator(QMainWindow):
         self.render_reset()
 
     def preview_view_changed(self,value):
-        self.studio_light.setEnabled(value == '3D')
+        self.studio_light.setEnabled(True)
         if value == '3D':
             self.preview_orbit_changed(self.board.yaw,self.board.pitch,False)
         else:

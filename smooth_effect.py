@@ -26,9 +26,12 @@ def pack(image, depth, strength=.075, convergence=.5, ghost=False, areas=None, m
 def render(renderer, angle, u, v):
     sample=renderer.sample
     depth=renderer.sample_channel
-    movement=-angle*renderer.motion[0]
-    source=np.broadcast_to(u,np.broadcast_shapes(u.shape,v.shape)).copy()
-    for _ in range(7):
+    movement=angle*renderer.motion[0]*(1 if renderer.motion[2]>.5 else -1)
+    # Match the native shader: one clamped initial displacement, then six
+    # relaxed depth reads. The final pre-update depth drives the foil phase.
+    initial=depth(u,.5+v*.5,1)
+    source=np.clip(u+(initial-renderer.motion[1])*movement,0,1)
+    for _ in range(6):
         height=depth(source,.5+v*.5,1)
         target=u+(height-renderer.motion[1])*movement
         source=(source+target)*.5
