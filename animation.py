@@ -11,6 +11,7 @@ class Animation:
     frames: tuple
     ends_ms: tuple
     loop: int
+    source_size: tuple | None = None
 
     @property
     def duration_ms(self):
@@ -31,9 +32,17 @@ class Animation:
         settings = placement or {}
         zoom = float(settings.get('zoom', 1))
         x, y = (float(settings.get(axis, 0)) for axis in ('x', 'y'))
-        if not all(math.isfinite(value) for value in (zoom, x, y)) or not .1 <= zoom <= 5 or max(abs(x), abs(y)) > 1:
+        rotation=float(settings.get('rotation',0))
+        if not all(math.isfinite(value) for value in (zoom, x, y, rotation)) or not .01 <= zoom <= 20 or max(abs(x), abs(y)) > 5 or abs(rotation)>360:
             raise ValueError('Invalid animation placement.')
-        scale = min(1, size[0] / frame.width, size[1] / frame.height) * zoom
+        logical=self.source_size or frame.size
+        scale = min(1, size[0] / logical[0], size[1] / logical[1]) * zoom * logical[0]/frame.width
+        if self.source_size or rotation or zoom>5 or zoom<.1 or max(abs(x),abs(y))>1:
+            c,s=math.cos(math.radians(rotation)),math.sin(math.radians(rotation))
+            cx,cy=size[0]*(.5+x),size[1]*(.5+y)
+            affine=(c/scale,s/scale,frame.width/2-(c*cx+s*cy)/scale,-s/scale,c/scale,frame.height/2+(s*cx-c*cy)/scale)
+            result=frame.convert('RGBA').transform(size,Image.Transform.AFFINE,affine,Image.Resampling.BICUBIC,fillcolor=background)
+            canvas=Image.new('RGBA',size,background);canvas.alpha_composite(result);return canvas.convert('RGB')
         width, height = max(1, round(frame.width * scale)), max(1, round(frame.height * scale))
         frame = frame.resize((width, height), Image.Resampling.LANCZOS)
         canvas = Image.new('RGBA', size, background)
@@ -91,7 +100,7 @@ class Animation:
         }
 
 
-def load(path, *, max_frames=512, max_pixels=256_000_000):
+def load(path, *, max_frames=512, max_pixels=256_000_000, preview_max_pixels=None):
     frames, ends, elapsed, pixels = [], [], 0, 0
     with Image.open(Path(path)) as image:
         if not getattr(image, 'is_animated', False):
@@ -101,6 +110,9 @@ def load(path, *, max_frames=512, max_pixels=256_000_000):
             loop = 1 if 'loop' not in image.info else 0 if loop == 0 else loop + 1
         start = 1 if image.info.get('default_image', False) else 0
         count = image.n_frames - start
+        source_size=image.size
+        factor=1 if preview_max_pixels is None else min(1,512/image.width,2048/image.height,math.sqrt(max(1,preview_max_pixels)/(image.width*image.height*max(1,count))))
+        preview_size=(max(1,round(image.width*factor)),max(1,round(image.height*factor)))
         if count > max_frames:
             raise ValueError(f'Animation has {count} frames; shorten it to {max_frames} or fewer.')
         for index in range(start, image.n_frames):
@@ -112,6 +124,8 @@ def load(path, *, max_frames=512, max_pixels=256_000_000):
             if not math.isfinite(duration) or duration <= 0:
                 duration = 100
             elapsed += duration
-            frames.append(ImageOps.exif_transpose(image).convert('RGBA').copy())
+            frame=ImageOps.exif_transpose(image).convert('RGBA')
+            if factor<1:frame=frame.resize(preview_size,Image.Resampling.BILINEAR)
+            frames.append(frame.copy())
             ends.append(elapsed)
-    return Animation(tuple(frames), tuple(ends), loop)
+    return Animation(tuple(frames), tuple(ends), loop,source_size if factor<1 else None)

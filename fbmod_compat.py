@@ -147,6 +147,19 @@ def compatible(data):
         width, height = struct.unpack_from('<HH', header, 22)
         size = struct.unpack_from('<I', header, 56)[0]
         chunk_index = archive.find(3, str(uuid.UUID(bytes_le=bytes(header[40:56]))))
+        if struct.unpack_from('<I',header,12)[0]==20:
+            # Current smooth-depth exports use validated RGBA8 mip chains. Do not
+            # truncate their data to the old BC7 base-level layout on re-export.
+            levels=header[30]
+            if chunk_index is None or (width,height)!=(512,4096) or not 1<=levels<=13:
+                raise UnsupportedMod('The lossless depth texture layout is not supported.')
+            expected=[max(1,width>>n)*max(1,height>>n)*4 for n in range(levels)]
+            sizes=list(struct.unpack_from('<15I',header,56))
+            if (sizes!=expected+[0]*(15-levels) or header[31:34]!=bytes((0,0,levels))
+                    or struct.unpack_from('<I',header,116)[0]!=sum(expected)
+                    or len(unpack(archive.blobs[chunk_index]))!=sum(expected)):
+                raise UnsupportedMod('The lossless depth texture mip chain is invalid.')
+            continue
         if chunk_index is None or size != max(1, (width + 3) // 4) * max(1, (height + 3) // 4) * 16:
             raise UnsupportedMod('The artwork texture layout is not supported.')
         pixels = unpack(archive.blobs[chunk_index])

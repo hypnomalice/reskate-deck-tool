@@ -45,11 +45,17 @@ def atlas(clip, brightness=2, background="#ffffff", placement=None, quality=1):
     settings = placement or {}
     zoom = float(settings.get('zoom', 1))
     ox, oy = (float(settings.get(axis, 0)) for axis in ('x','y'))
-    if not all(math.isfinite(v) for v in (zoom,ox,oy,brightness)) or not .1 <= zoom <= 5 or max(abs(ox),abs(oy)) > 1 or not .1 <= brightness <= 4:
+    rotation=float(settings.get('rotation',0))
+    if not all(math.isfinite(v) for v in (zoom,ox,oy,brightness,rotation)) or not .01 <= zoom <= 20 or max(abs(ox),abs(oy)) > 5 or abs(rotation)>360 or not .1 <= brightness <= 4:
         raise ValueError('Invalid animation placement or brightness.')
     scale = min(1,512/original.width,2048/original.height)*zoom
     full_w, full_h = (max(1,round(v*scale)) for v in original.size)
     left, top = round((512-full_w)/2+ox*512), round((2048-full_h)/2+oy*2048)
+    cosine,sine=math.cos(math.radians(rotation)),math.sin(math.radians(rotation))
+    if rotation:
+        rotated_w=abs(cosine)*full_w+abs(sine)*full_h;rotated_h=abs(sine)*full_w+abs(cosine)*full_h
+        left,top=math.floor(512*(.5+ox)-rotated_w/2),math.floor(2048*(.5+oy)-rotated_h/2)
+        full_w,full_h=math.ceil(rotated_w),math.ceil(rotated_h)
     x0,y0,x1,y1=max(0,left),max(0,top),min(512,left+full_w),min(2048,top+full_h)
     if x1<=x0 or y1<=y0:
         raise ValueError('The animation is entirely outside the board.')
@@ -85,7 +91,12 @@ def atlas(clip, brightness=2, background="#ffffff", placement=None, quality=1):
         canvas.alpha_composite(frame.convert('RGBA'))
         crop=((x0-left)*original.width/full_w,(y0-top)*original.height/full_h,
               (x1-left)*original.width/full_w,(y1-top)*original.height/full_h)
-        frame=canvas.convert('RGB').resize((stored_w,stored_h),Image.Resampling.LANCZOS,box=crop)
+        if rotation:
+            cx,cy=512*(.5+ox),2048*(.5+oy);dx,dy=board_w/stored_w,board_h/stored_h
+            affine=(cosine*dx/scale,sine*dy/scale,original.width/2+(cosine*(x0-cx)+sine*(y0-cy))/scale,
+                    -sine*dx/scale,cosine*dy/scale,original.height/2+(-sine*(x0-cx)+cosine*(y0-cy))/scale)
+            frame=canvas.convert('RGB').transform((stored_w,stored_h),Image.Transform.AFFINE,affine,Image.Resampling.BICUBIC,fillcolor=background)
+        else:frame=canvas.convert('RGB').resize((stored_w,stored_h),Image.Resampling.LANCZOS,box=crop)
         pad=2*quality
         padded=Image.new('RGB',(stored_w+2*pad,stored_h+2*pad))
         padded.paste(frame,(pad,pad))
@@ -99,8 +110,18 @@ def atlas(clip, brightness=2, background="#ffffff", placement=None, quality=1):
 
 
 
-def preview_frame(clip, index, background, placement):
+def preview_frame(clip, index, background, placement, size=None):
     frame = clip.frames[index].convert('RGBA')
+    if size is not None:
+        # Sample directly into the small preview viewport, in the same logical
+        # board coordinates as export. Never lift/cache a full-resolution frame.
+        cfg=placement or {};zoom=float(cfg.get('zoom',1));ox=float(cfg.get('x',0));oy=float(cfg.get('y',0));rotation=float(cfg.get('rotation',0))
+        if not all(math.isfinite(v) for v in (zoom,ox,oy,rotation)) or not .01<=zoom<=20 or max(abs(ox),abs(oy))>5 or abs(rotation)>360:raise ValueError('Invalid animation placement.')
+        logical=clip.source_size or frame.size
+        scale=min(1,512/logical[0],2048/logical[1])*zoom*logical[0]/frame.width
+        c,s=math.cos(math.radians(rotation)),math.sin(math.radians(rotation));dx,dy=512/size[0],2048/size[1];cx,cy=512*(.5+ox),2048*(.5+oy)
+        transform=(c*dx/scale,s*dy/scale,frame.width/2-(c*cx+s*cy)/scale,-s*dx/scale,c*dy/scale,frame.height/2+(s*cx-c*cy)/scale)
+        frame=frame.transform(size,Image.Transform.AFFINE,transform,Image.Resampling.BILINEAR,fillcolor=(0,0,0,0))
     channels = frame.split()
     lut=[]
     for n in range(256):
@@ -108,5 +129,7 @@ def preview_frame(clip, index, background, placement):
         linear=value/12.92 if value<=.04045 else ((value+.055)/1.055)**2.4
         lut.append(srgb(2*linear/(1+linear)))
     lifted=Image.merge('RGBA',tuple(c.point(lut) for c in channels[:3])+(channels[3],))
-    one=animation.Animation((lifted,),(100,),0)
+    if size is not None:
+        canvas=Image.new('RGBA',size,background);canvas.alpha_composite(lifted);return canvas.convert('RGB')
+    one=animation.Animation((lifted,),(100,),0,clip.source_size)
     return one.board_frame(0,background=background,placement=placement)

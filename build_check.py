@@ -147,7 +147,7 @@ def check(folder):
         headers=[i for i in range(len(three_archive.blobs)) if three_archive.key(i)[0]==2 and three_archive.key(i)[1].endswith('_color')]
         assert len(headers)==1
         header=unpack(three_archive.blobs[headers[0]])
-        assert struct.unpack_from('<H',header,20)[0]==1 and header[30]==1
+        assert struct.unpack_from('<I',header,12)[0]==20 and header[30]==13
         report['three_layer_output']=str(three_output)
         report['three_layer_parallax']=True
         finishes=[dict(name='Packaged Metallic Flakes',mode='metal',images=[images[0],None]),
@@ -188,6 +188,16 @@ def check(folder):
         exported=depth_views.views(art,proof,.1,.5)
         assert all(a.tobytes()==b.tobytes() for a,b in zip(shared,exported))
         report['depth_preview_export_parity']=True
+        import cd_finish
+        cd=dict(name='Packaged CD controls',mode='cd',images=[images[0],str(depth.resolve())],
+                cd=dict(finish='cd_mirror',layout='corner',optics='combined',rim_strength=2,scratch_amount=3),
+                placement=[dict(zoom=1.2,x=.1,y=0,rotation=17)]*2)
+        cd_output=engine.export_pack([cd],folder/'CD Hologram Pack.fbmod',shared_runtime=True)
+        cd_archive=Archive(cd_output.read_bytes())
+        cd_headers=[unpack(cd_archive.blobs[i]) for i in range(len(cd_archive.blobs)) if cd_archive.key(i)[0]==2 and cd_archive.key(i)[1].endswith('_color')]
+        assert len(cd_headers)==1 and struct.unpack_from('<I',cd_headers[0],12)[0]==20 and cd_headers[0][30]==13
+        assert not set(cd_archive.key(i) for i in range(len(cd_archive.blobs))) & shared_keys()
+        report['cd_controls_and_rotated_export']=True
 
 
     except Exception:

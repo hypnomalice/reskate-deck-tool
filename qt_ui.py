@@ -12,7 +12,7 @@ import numpy as np
 from pathlib import Path
 
 from PIL import Image, ImageOps
-from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, Signal, QSettings
+from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, Signal, QSettings, QObject, QEvent
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPalette, QImage
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QFormLayout, QLabel, QPushButton, QToolButton, QLineEdit, QComboBox, QSlider,
@@ -26,6 +26,8 @@ import image_placement
 import preview_depth
 import live_placement
 import board_preview
+import cd_finish
+import surface_finish
 from effect_preview import AtlasPreview
 from app_version import APP_VERSION
 from studio_ui import MODES, QUOTES, APP_NAME
@@ -73,6 +75,8 @@ def help_button(text, layout):
     widget = QToolButton()
     widget.setText('?')
     widget.setToolTip(text)
+    widget.setAccessibleName('Explain this setting')
+    widget.clicked.connect(lambda: QMessageBox.information(widget, 'About this setting', text))
     widget.setFixedSize(24,24)
     layout.addWidget(widget)
     return widget
@@ -117,7 +121,9 @@ class Adjustment(QWidget):
         self.set_value(value)
 
     def _changed(self,value):
+        self.slider.blockSignals(True)
         self.slider.setValue(round(value))
+        self.slider.blockSignals(False)
         self.changed.emit(value)
 
     def set_value(self,value):
@@ -134,6 +140,10 @@ class Adjustment(QWidget):
 
 class Board(QWidget):
     orbit_changed = Signal(float, float, bool)
+    artwork_dragged = Signal(float,float)
+    artwork_released = Signal()
+    artwork_zoomed = Signal(float)
+    artwork_rotated = Signal(float)
     def __init__(self):
         super().__init__()
         self.frame = None
@@ -142,9 +152,13 @@ class Board(QWidget):
         self.view_mode = '2D'
         self.yaw, self.pitch = 0., 0.
         self.drag_position = None
+        self.edit_artwork=False
+        self.artwork_rect=None
         self.setMinimumSize(250,180)
 
     def mousePressEvent(self,event):
+        if self.edit_artwork and event.button()==Qt.LeftButton:
+            self.drag_position=event.position();event.accept();return
         if self.view_mode=='3D' and event.button()==Qt.LeftButton:
             self.drag_position=event.position()
             event.accept()
@@ -153,6 +167,9 @@ class Board(QWidget):
         if self.drag_position is not None:
             delta=event.position()-self.drag_position
             self.drag_position=event.position()
+            if self.edit_artwork and self.artwork_rect is not None:
+                self.artwork_dragged.emit(delta.x()/max(1,self.artwork_rect.width()),delta.y()/max(1,self.artwork_rect.height()))
+                return
             self.yaw=max(-70.,min(70.,self.yaw+delta.x()*.4))
             self.pitch=max(-65.,min(65.,self.pitch+delta.y()*.3))
             self.orbit_changed.emit(self.yaw,self.pitch,True)
@@ -161,10 +178,20 @@ class Board(QWidget):
     def mouseReleaseEvent(self,event):
         was_dragging = self.drag_position is not None
         self.drag_position=None
-        if was_dragging:
+        if was_dragging and self.edit_artwork:self.artwork_released.emit()
+        if was_dragging and not self.edit_artwork:
             self.orbit_changed.emit(self.yaw,self.pitch,False)
 
+    def wheelEvent(self,event):
+        if self.edit_artwork and event.modifiers() & Qt.ControlModifier:
+            steps=event.angleDelta().y()/120
+            if event.modifiers() & Qt.ShiftModifier:self.artwork_rotated.emit(steps*3)
+            else:self.artwork_zoomed.emit(1.08**steps)
+            event.accept()
+        else:super().wheelEvent(event)
+
     def mouseDoubleClickEvent(self,event):
+        if self.edit_artwork:return
         self.yaw,self.pitch=0.,0.
         self.orbit_changed.emit(self.yaw,self.pitch,False)
         self.update()
@@ -182,6 +209,7 @@ class Board(QWidget):
         h = min(self.height()-30,(self.width()-45)*board_preview.DECK_LENGTH)
         w = h/board_preview.DECK_LENGTH
         area = QRectF((self.width()-w)/2,(self.height()-h)/2,w,h)
+        self.artwork_rect=area
         path = QPainterPath()
         steps=[.5-.5*math.cos(math.pi*j/80) for j in range(81)]
         outline=[(0,v) for v in steps]+[(1,v) for v in reversed(steps)]
@@ -282,15 +310,25 @@ class Creator(QMainWindow):
         self.preview_timer.setInterval(150)
         self.preview_timer.timeout.connect(self.prepare)
         self.build_ui()
+        from editor_layout import install
+        install(self)
         self.apply_deck()
         self.baseline = self.workspace()
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self.poll)
-        self.poll_timer.start(30)
+        self.poll_timer.start(60)
         self.animation_timer = QTimer(self)
         self.animation_timer.timeout.connect(self.render)
-        self.animation_timer.start(16)
+        self.animation_timer.setInterval(42)
         QTimer.singleShot(1000,self.check_updates)
+
+    def hideEvent(self,event):
+        if hasattr(self,'animation_timer'):self.animation_timer.stop()
+        super().hideEvent(event)
+
+    def showEvent(self,event):
+        super().showEvent(event)
+        if hasattr(self,'animation_timer') and self.clip:self.animation_timer.start()
 
     def save_project(self):
         if self.busy:
@@ -337,6 +375,7 @@ class Creator(QMainWindow):
         for source in decks:
             deck = default_deck()
             deck.update(source)
+            if deck.get('mode')=='ghost' and deck.get('cd',{}).get('enabled'):deck['mode']='cd'
             deck['lenticular']=source.get('lenticular',True)
             if deck['mode'] not in MODES or len(deck['images'])!=2:
                 raise ValueError('Invalid deck settings.')
@@ -437,6 +476,7 @@ class Creator(QMainWindow):
         mode = self.export_mode.currentData()
         self.export_button.setText({'zip':'Export ZIP','game':'Install deck','fbmod':'Export FBMOD'}[mode])
         self.pack_button.setText(('Install all' if mode=='game' else 'Export all')+f' ({len(self.decks)})')
+        self.pack_button.setVisible(len(self.decks)>1)
         self.export_hint.setText({'zip':'Ready to install or share.','game':'Close the game and launcher before installing.','fbmod':'For editing in Studio.'}[mode])
         game = str(QSettings('hypnomalice','ReSkate Deck Tool').value('native/game',''))
         self.export_destination.setText(str(Path(game)/'Mods') if game else 'Choose your game folder on first install.')
@@ -451,6 +491,18 @@ class Creator(QMainWindow):
         preferences = QSettings('hypnomalice','ReSkate Deck Tool')
         game = str(preferences.value('native/game',''))
         compiler = str(preferences.value('native/compiler',''))
+        portable=Path(sys.executable).with_suffix('.export.json') if getattr(sys,'frozen',False) else None
+        if portable and portable.is_file():
+            try:
+                setup=json.loads(portable.read_text(encoding='utf-8'))
+                game,compiler=setup['game_root'],setup['compiler']
+                if setup['schema']!=1:raise ValueError('Unsupported export setup.')
+                native_export.validate_inputs(game,compiler)
+                if not force:return dict(game_root=game,compiler=compiler)
+            except (OSError,ValueError,KeyError,TypeError) as error:
+                QMessageBox.warning(self,'Native export setup',str(error));return None
+        else:
+            portable=None
         if force or not (Path(game)/'Skate.exe').is_file() or not (Path(game)/'Data/layout.toc').is_file():
             QMessageBox.information(self,'Native mod export',
                 'This exports compiled mod files directly, without opening Studio. Select your Skate folder and the reskate_cli.exe from your shader-capable Studio installation once. The compiler is still required; it is not bundled or downloaded.')
@@ -469,8 +521,11 @@ class Creator(QMainWindow):
         except ValueError as error:
             QMessageBox.warning(self,'Native export setup',str(error))
             return None
-        preferences.setValue('native/game',game)
-        preferences.setValue('native/compiler',compiler)
+        if portable:
+            portable.write_text(json.dumps(dict(schema=1,game_root=game,compiler=compiler),indent=2),encoding='utf-8')
+        else:
+            preferences.setValue('native/game',game)
+            preferences.setValue('native/compiler',compiler)
         return dict(game_root=game,compiler=compiler)
 
     def update_fbmods(self):
@@ -821,7 +876,7 @@ class Creator(QMainWindow):
         self.placement_choice.currentIndexChanged.connect(self.choose_placement)
         placement.addWidget(self.placement_choice)
         self.positions = {}
-        for key,title,value,low,high in [('zoom','Scale',100,10,500),('x','Horizontal',0,-100,100),('y','Vertical',0,-100,100)]:
+        for key,title,value,low,high in [('zoom','Size',100,1,2000),('x','Horizontal',0,-500,500),('y','Vertical',0,-500,500),('rotation','Rotation',0,-360,360)]:
             control = Adjustment(title,value,low,high)
             control.changed.connect(self.move_image)
             control.slider.sliderReleased.connect(self.finish_placement)
@@ -871,6 +926,32 @@ class Creator(QMainWindow):
         self.neon_tolerance=Adjustment('Colour tolerance',15,0,100,tip='Include colours close to the selected glow colour.')
         self.neon_brightness=Adjustment('Neon brightness',100,0,100,tip='100% matches the approved Neon C test. Black areas of the mask never glow.')
         for control in (self.neon_tolerance,self.neon_brightness):effects.addWidget(control);control.changed.connect(self.changed)
+        self.cd_box=QGroupBox('CD hologram')
+        cd_form=QFormLayout(self.cd_box)
+        self.cd_finish=QComboBox();self.cd_finish.addItems(list(cd_finish.FINISHES.values()))
+        self.cd_layout=QComboBox();self.cd_layout.addItems(['Full CD art','Corner CD art'])
+        self.cd_colours=QComboBox();self.cd_colours.addItems(['Separate artwork colours','Match disc colours'])
+        for label,control in [('Background finish',self.cd_finish),('Disc layout',self.cd_layout),('Artwork colours',self.cd_colours)]:
+            control.currentIndexChanged.connect(self.changed);cd_form.addRow(label,control)
+        self.cd_optics=QComboBox();self.cd_optics.addItems(list(cd_finish.OPTICS.values()))
+        self.cd_optics.currentIndexChanged.connect(self.changed);cd_form.addRow('Reflection response',self.cd_optics)
+        self.cd_clear=QCheckBox('Clear-layer white sheen');self.cd_clear.toggled.connect(self.changed);cd_form.addRow(self.cd_clear)
+        self.cd_backing=QCheckBox('Stronger backing rainbow');self.cd_backing.toggled.connect(self.changed);cd_form.addRow(self.cd_backing)
+        self.cd_controls={}
+        for key,title,default,maximum in [('depth_strength','Artwork depth',100,200),('faint_visibility','Faint artwork visibility',18,100),('sheen_strength','Clear-layer sheen strength',100,200),('rim_strength','Clear rim strength',0,400),('boundary_strength','Recording-area boundary',0,400),('scratch_strength','Scratch strength',0,400),('scratch_amount','Scratch amount',2,4)]:
+            control=Adjustment(title,default,0,maximum);control.changed.connect(self.changed);cd_form.addRow(control);self.cd_controls[key]=control
+        cd_help=QLabel('Choose a full disc or a clipped corner, then its backing and reflection response. Surface details are optional; 100% is the tested strength. Requires SDEC 2.1.0 or newer. Preview lighting is approximate.')
+        cd_help.setWordWrap(True);cd_form.addRow(cd_help);effects.addWidget(self.cd_box)
+        self.surface_box=QGroupBox('Optional surface finish')
+        surface_form=QFormLayout(self.surface_box)
+        self.surface_shimmer=QCheckBox('White reflection shimmer')
+        self.surface_shimmer.toggled.connect(self.changed);surface_form.addRow(self.surface_shimmer)
+        self.surface_strength=Adjustment('Shimmer strength',35,0,100)
+        self.surface_strength.changed.connect(self.changed);surface_form.addRow(self.surface_strength)
+        self.smooth_depth=QCheckBox('Smooth depth gradients - larger textures')
+        self.smooth_depth.toggled.connect(self.changed);surface_form.addRow(self.smooth_depth)
+        self.surface_hint=QLabel('White shimmer is optional for every effect and needs the supplied finish renderer. Smooth depth gradients applies to smooth Depth Map and Ghost Rare exports; lenticular bands are preserved.')
+        self.surface_hint.setWordWrap(True);surface_form.addRow(self.surface_hint);effects.addWidget(self.surface_box)
         self.ghost_box=QGroupBox('Ghost Rare finish areas')
         ghost_form=QFormLayout(self.ghost_box);self.ghost_area_controls={}
         for kind,title in (('silver','Silver'),('holo','Holo')):
@@ -881,7 +962,7 @@ class Creator(QMainWindow):
             colour_button=QPushButton('Choose artwork colour...');colour_button.clicked.connect(lambda checked=False,k=kind:self.choose_ghost_colour(k));ghost_form.addRow('',colour_button)
             tolerance=Adjustment('Colour tolerance',15,0,100,tip='Include artwork colours near the selected colour.');tolerance.changed.connect(self.changed);ghost_form.addRow('',tolerance)
             self.ghost_area_controls[kind]=(method,mask_button,mask_name,colour_button,tolerance)
-        ghost_help=QLabel('White mask areas receive the finish; black stays as artwork. Grey softens it. Silver and holo are independent. Requires SDEC core 1.3.0 from Thunderstore.')
+        ghost_help=QLabel('White mask areas receive the finish; black stays as artwork. Grey softens it. Silver and holo are independent. Requires SDEC core 2.1.0 from Thunderstore.')
         ghost_help.setWordWrap(True);ghost_help.setMinimumHeight(100);ghost_form.addRow(ghost_help);effects.addWidget(self.ghost_box)
         self.liquid_colour=button('Liquid colour…',self.choose_liquid_colour,effects)
         self.liquid_cloud=Adjustment('Cloudiness',15,0,100,tip='Clear to cloudy. Softens the background through liquid; the front PNG stays sharp.')
@@ -945,6 +1026,9 @@ class Creator(QMainWindow):
         d.update(name=self.name.text(),author=self.author.text(),mode=list(MODES)[self.mode.currentIndex()],lenticular=self.lenticular.isChecked(),fit=self.fit.currentText(),background_fit=self.backfit.currentText(),
             depth=dict(strength=self.strength.value()/100,convergence=self.convergence.value()/100,bands=self.bands.value()/100,invert=self.invert.isChecked()),
             animation=dict(quality=(1,2,4)[self.quality.currentIndex()]),wood_tint=d.get('wood_colour',d.get('wood_tint') or '#b98a56') if self.wood_mode.currentIndex() else None,wood_intensity=self.intensity.value()/100)
+        d['cd']=dict(enabled=list(MODES)[self.mode.currentIndex()]=='cd',finish=list(cd_finish.FINISHES)[self.cd_finish.currentIndex()],layout=('full','corner')[self.cd_layout.currentIndex()],colours=('separate','shared')[self.cd_colours.currentIndex()])
+        d['cd'].update(optics=list(cd_finish.OPTICS)[self.cd_optics.currentIndex()],clear_layer=self.cd_clear.isChecked(),stronger_backing=self.cd_backing.isChecked(),**{key:control.value()/(1 if key=='scratch_amount' else 100) for key,control in self.cd_controls.items()})
+        d['surface_finish']=dict(shimmer=self.surface_shimmer.isChecked(),strength=self.surface_strength.value()/100,smooth_depth=self.smooth_depth.isChecked())
         d['neon']=dict(selection='colour' if self.neon_method.currentIndex() else 'mask',colour=d.get('neon',{}).get('colour','#00dfff'),tolerance=self.neon_tolerance.value()/100,brightness=self.neon_brightness.value()/100)
         for kind,(method,mask_button,mask_name,colour_button,tolerance) in self.ghost_area_controls.items():
             cfg=d.setdefault('ghost',{}).setdefault(kind,{})
@@ -965,12 +1049,18 @@ class Creator(QMainWindow):
             self.tabs.addTab(d['name'] or 'Untitled deck')
         self.tabs.setCurrentIndex(self.selected)
         self.tabs.blockSignals(False)
+        if hasattr(self,'deck_list'):
+            self.deck_list.blockSignals(True)
+            self.deck_list.clear();self.deck_list.addItems([d['name'] or 'Untitled deck' for d in self.decks])
+            self.deck_list.setCurrentRow(self.selected);self.deck_list.blockSignals(False)
         self.update_export_controls()
 
     def apply_deck(self):
         self.loading = True
         d = self.current()
         self.name.setText(d['name'])
+        if hasattr(self,'link_transforms'):
+            self.link_transforms.setChecked(d.get('link_transforms',d['mode'] in ('depth','ghost','cd')))
         self.author.setText(d.get('author',''))
         self.mode.setCurrentIndex(list(MODES).index(d['mode']))
         self.fit.setCurrentText(d.get('fit','Stretch'))
@@ -980,6 +1070,11 @@ class Creator(QMainWindow):
         for key,default in [('strength',.04),('convergence',.5),('bands',1)]:
             getattr(self,key).set_value(settings.get(key,default)*100)
         self.invert.setChecked(settings.get('invert',False))
+        cd=cd_finish.settings(d.get('cd'))
+        self.cd_finish.setCurrentIndex(list(cd_finish.FINISHES).index(cd['finish']));self.cd_layout.setCurrentIndex(0 if cd['layout']=='full' else 1);self.cd_colours.setCurrentIndex(0 if cd['colours']=='separate' else 1)
+        self.cd_optics.setCurrentIndex(list(cd_finish.OPTICS).index(cd['optics']));self.cd_clear.setChecked(cd['clear_layer']);self.cd_backing.setChecked(cd['stronger_backing'])
+        for key,control in self.cd_controls.items():control.set_value(cd[key]*(1 if key=='scratch_amount' else 100))
+        surface=surface_finish.settings(d.get('surface_finish'));self.surface_shimmer.setChecked(surface['shimmer']);self.surface_strength.set_value(surface['strength']*100);self.smooth_depth.setChecked(surface['smooth_depth'])
         ink=d.get('ink',{})
         self.ink_showthrough.set_value(ink.get('showthrough',0)*100)
         self.ink_strength.set_value(ink.get('strength',1)*100)
@@ -1012,7 +1107,16 @@ class Creator(QMainWindow):
 
     def update_mode(self):
         mode = list(MODES)[self.mode.currentIndex()]
-        names = {'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'ghost':('Colour image','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused'),'metal':('Graphic','Unused'),'ink':('Graphic','Reveal mask (white reveals ink)'),'window':('Front frame (transparent PNG)','Background'),'liquid':('Front image (transparent PNG)','Background'),'neon':('Artwork','Glow mask (white glows, black stays unlit)')}[mode]
+        if hasattr(self,'effect_picker'):
+            self.link_transforms.blockSignals(True)
+            self.link_transforms.setChecked(self.current().get('link_transforms',mode in ('depth','ghost','cd')))
+            self.link_transforms.blockSignals(False)
+            chosen=self.current().get('effect_chosen',any(self.current().get('images',[])))
+            self.effect_picker.blockSignals(True)
+            self.effect_picker.setCurrentIndex(self.mode.currentIndex()+1 if chosen else 0)
+            self.effect_picker.blockSignals(False)
+            self.inspector_tabs.setVisible(chosen)
+        names = {'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'ghost':('Colour image','Depth map'),'cd':('Artwork','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused'),'metal':('Graphic','Unused'),'ink':('Graphic','Reveal mask (white reveals ink)'),'window':('Front frame (transparent PNG)','Background'),'liquid':('Front image (transparent PNG)','Background'),'neon':('Artwork','Glow mask (white glows, black stays unlit)')}[mode]
         self.lenticular.setVisible(mode in ('depth','layers'))
         self.lenticular_help.setVisible(mode in ('depth','layers'))
         self.lenticular.setEnabled(not self.busy)
@@ -1022,7 +1126,7 @@ class Creator(QMainWindow):
             for w in (label,self.image_names[i],self.image_buttons[i]):
                 w.setVisible(i==0 or (mode not in ('gif','metal') and not (mode=='neon' and self.neon_method.currentIndex()==1)))
         for w in (self.auto_button,self.auto_help):
-            w.setVisible(mode in ('depth','ghost'))
+            w.setVisible(mode in ('depth','ghost','cd'))
         self.multi_panel.setVisible(mode=='classic')
         if mode=='classic':
             selected=self.picture_list.currentRow();self.picture_list.clear()
@@ -1040,21 +1144,43 @@ class Creator(QMainWindow):
         for control in self.layer_depth_controls:control.setVisible(three)
         self.convergence.setVisible(not three)
         count=1 if mode=='metal' else 3 if (three or mode=='window' and self.current().get('middle_image')) else 2
-        placement_labels=['Graphic'] if mode=='metal' else ['Front frame','Background','Object layer'][:count] if mode=='window' else ['Foreground','Background','Middle layer'] if three else ['First image','Second image']
+        placement_labels=['Artwork','Depth map'] if mode in ('depth','ghost','cd') else ['Animation'] if mode=='gif' else ['Graphic'] if mode=='metal' else ['Front frame','Background','Object layer'][:count] if mode=='window' else ['Foreground','Background','Middle layer'] if three else ['First image','Second image']
         if [self.placement_choice.itemText(i) for i in range(self.placement_choice.count())]!=placement_labels:
             self.placement_choice.blockSignals(True)
             self.placement_choice.clear();self.placement_choice.addItems(placement_labels)
             self.placement_choice.blockSignals(False)
             self.placement_index=None
         for w in (self.strength,self.bands,self.convergence,self.invert):
-            w.setEnabled(mode in ('depth','layers','ghost') and not self.busy)
+            w.setEnabled(mode in ('depth','layers','ghost','cd') and not self.busy)
         self.bands.setEnabled(mode in ('depth','layers') and self.lenticular.isChecked() and not self.busy)
         self.bands.setVisible(mode in ('depth','layers') and self.lenticular.isChecked())
         for w in (self.strength,self.convergence,self.invert):
             w.setVisible(mode not in ('classic','metal','ink','window','liquid','neon') and not (three and w==self.convergence))
         for control in (self.ink_background,self.ink_revealed,self.ink_showthrough,self.ink_strength,self.ink_contrast,self.ink_invert):
             control.setVisible(mode=='ink');control.setEnabled(not self.busy)
-        self.ghost_box.setVisible(mode=='ghost')
+        self.surface_strength.setEnabled(self.surface_shimmer.isChecked() and not self.busy)
+        self.smooth_depth.setVisible(False)
+        self.smooth_depth.setEnabled(not self.busy and (mode=='ghost' or mode=='depth' and not self.lenticular.isChecked()))
+        cd_on=mode=='cd'
+        self.cd_box.setVisible(cd_on)
+        if hasattr(self,'cd_surface_box'):self.cd_surface_box.setVisible(cd_on)
+        if cd_on:
+            self.strength.hide();self.convergence.hide()
+        self.surface_box.setVisible(not cd_on)
+        for control in (self.cd_finish,self.cd_layout,self.cd_colours,self.cd_optics,self.cd_clear,self.cd_backing,*self.cd_controls.values()):control.setEnabled(cd_on and not self.busy)
+        modern_cd=cd_on and list(cd_finish.FINISHES)[self.cd_finish.currentIndex()]=='cd_mirror'
+        for control in (self.cd_optics,self.cd_backing,self.cd_controls['faint_visibility']):control.setEnabled(modern_cd and not self.busy)
+        self.cd_optics.setToolTip('Reflection variants apply to the CD mirror backing.')
+        self.cd_controls['sheen_strength'].setEnabled(cd_on and self.cd_clear.isChecked() and not self.busy)
+        self.ghost_box.setVisible(mode=='ghost' and not cd_on)
+        if cd_on:self.preview_title.setText('CD finish preview · approximate lighting')
+        exact_preview=not cd_on and not surface_finish.smooth_depth(self.current())
+        self.export_preview.setEnabled(exact_preview and not self.busy)
+        self.export_preview.setVisible(exact_preview)
+        if not exact_preview and self.export_preview.isChecked():self.export_preview.setChecked(False)
+        if cd_on:
+            self.strength.setEnabled(False)
+            self.convergence.setEnabled(False)
         for kind,(method,mask_button,mask_name,colour_button,tolerance) in self.ghost_area_controls.items():
             cfg=self.current().get('ghost',{}).get(kind,{})
             mask_button.setVisible(method.currentIndex()==1);mask_name.setVisible(method.currentIndex()==1)
@@ -1070,10 +1196,11 @@ class Creator(QMainWindow):
             'window':'Use a transparent front frame to reveal the recessed background. The optional object sits between them.'}.get(mode,''))
         self.convergence.title.setText('Background motion' if mode=='layers' else 'Stationary depth')
         self.swap_button.setEnabled(mode=='classic')
+        self.swap_button.setVisible(mode=='classic')
         self.detail_toggle.setEnabled(mode in ('depth','layers') and self.lenticular.isChecked())
         self.detail_toggle.setVisible(mode in ('depth','layers') and self.lenticular.isChecked())
-        self.placement_choice.setEnabled(mode not in ('depth','ghost','gif','neon'))
-        if mode in ('depth','ghost','gif','neon'):
+        self.placement_choice.setEnabled(mode not in ('gif','neon'))
+        if mode in ('depth','ghost','cd','gif','neon'):
             self.placement_choice.setCurrentIndex(0)
 
     def choose_ghost_mask(self,kind):
@@ -1143,6 +1270,7 @@ class Creator(QMainWindow):
     def rename(self):
         self.remember()
         self.tabs.setTabText(self.selected,self.name.text() or 'Untitled deck')
+        if hasattr(self,'deck_list') and self.deck_list.item(self.selected):self.deck_list.item(self.selected).setText(self.name.text() or 'Untitled deck')
 
     def add_deck(self):
         if self.busy:
@@ -1203,6 +1331,7 @@ class Creator(QMainWindow):
         self.gif_cache.clear()
         self.last_key = None
         if clear:
+            if hasattr(self,'animation_timer'):self.animation_timer.stop()
             self.frame_renderer = self.frame_renderer_key = None
             self.last_detail_key = None
             self.live_placement = False
@@ -1223,7 +1352,7 @@ class Creator(QMainWindow):
         self.preview_timer.start()
 
     def prepare(self):
-        if self.live_placement and any(control.slider.isSliderDown() for control in self.positions.values()):
+        if self.live_placement and (self.board.drag_position is not None or any(control.slider.isSliderDown() for control in self.positions.values())):
             self.preview_timer.start(100)
             return
         self.remember()
@@ -1255,8 +1384,8 @@ class Creator(QMainWindow):
             try:
                 settings = d.get('depth',{})
                 if d['mode']=='gif':
-                    clip = cached_clip if cached_clip is not None else animation.load(d['images'][0])
-                    still = animation_texture.preview_frame(clip,0,d['background'],d['placement'][0])
+                    clip = cached_clip if cached_clip is not None else animation.load(d['images'][0],preview_max_pixels=12_000_000)
+                    still = animation_texture.preview_frame(clip,0,d['background'],d['placement'][0],size=(120,480))
                     result = (None,None,clip,[still,still],None,clip_key)
                 else:
                     sources = cached_sources
@@ -1268,8 +1397,8 @@ class Creator(QMainWindow):
                                 source = ImageOps.exif_transpose(source).convert('RGBA')
                                 source.thumbnail((1024,4096),Image.Resampling.LANCZOS)
                                 sources.append(source)
-                    images = [image_placement.frame(source,d['background_fit'] if d['mode']=='layers' and i==1 else d['fit'],d['background'],d.get('middle_placement',{}) if i==2 else d['placement'][i],alpha=(d['mode'] in ('layers','window','liquid') and i in (0,2)) or (d['mode']=='neon' and i==1),depth=d['mode'] in ('depth','ghost','ink') and i==1) for i,source in enumerate(sources)]
-                    if d['mode'] in ('depth','ghost') and settings.get('invert'):
+                    images = [image_placement.frame(source,d['background_fit'] if d['mode']=='layers' and i==1 else d['fit'],d['background'],d.get('middle_placement',{}) if i==2 else d['placement'][i],alpha=(d['mode'] in ('layers','window','liquid') and i in (0,2)) or (d['mode']=='neon' and i==1),depth=d['mode'] in ('depth','ghost','cd','ink') and i==1) for i,source in enumerate(sources)]
+                    if d['mode'] in ('depth','ghost','cd') and settings.get('invert'):
                         images[1] = ImageOps.invert(images[1].convert('RGB'))
                     strength,convergence,bands = (settings.get(k,v) for k,v in [('strength',.04),('convergence',.5),('bands',1)])
                     def progress(message):
@@ -1295,13 +1424,15 @@ class Creator(QMainWindow):
                         preview_mode=d['mode']
                         preview=AtlasPreview(atlas,preview_mode)
                         thumbs=[preview.render(a,(128,512)) for a in (-.4,.4)]
-                    elif d['mode']=='ghost' or (d['mode']=='depth' and not d.get('lenticular',True)):
+                    elif d['mode'] in ('ghost','cd') or (d['mode']=='depth' and not d.get('lenticular',True)):
                         import smooth_effect
                         atlas=smooth_effect.pack(*images,strength,convergence,d['mode']=='ghost',d.get('ghost'),d['fit'],d['placement'][0])
+                        cd_on=cd_finish.enabled(d)
+                        if cd_on:atlas=cd_finish.pack(images[0],images[1],d.get('cd'))
                         thumbs=images
-                        preview_mode='ghost' if d['mode']=='ghost' else 'smooth'
-                        if d['mode']=='ghost':
-                            ghost_preview=AtlasPreview(atlas,'ghost');thumbs=[ghost_preview.render(a,(128,512)) for a in (-.4,.4)]
+                        preview_mode='cd' if cd_on else 'ghost' if d['mode']=='ghost' else 'smooth'
+                        if d['mode'] in ('ghost','cd'):
+                            ghost_preview=AtlasPreview(atlas,preview_mode);thumbs=[ghost_preview.render(a,(128,512)) for a in (-.4,.4)]
                     elif d['mode']=='depth':
                         views = preview_depth.views(*images,strength,convergence,progress)
                         atlas = engine.depth_views.pack(views,bands,balanced=True)
@@ -1319,6 +1450,7 @@ class Creator(QMainWindow):
                         atlas = engine.atlas(*images)
                         thumbs = images
                     progress('')
+                    atlas=atlas if cd_finish.enabled(d) else surface_finish.mark(atlas,d.get('surface_finish'))
                     renderer = AtlasPreview(atlas,preview_mode)
                     detail = copy.copy(renderer)
                     detail.settings = detail.settings.copy()
@@ -1383,6 +1515,8 @@ class Creator(QMainWindow):
                         if not keep_clock:
                             self.started = time.monotonic()
                         self.clip_path = self.current()['images'][0] if self.clip else None
+                        if self.clip and self.isVisible():self.animation_timer.start()
+                        else:self.animation_timer.stop()
                         self.status.setText('Ready · preview before game lighting')
                         self.last_key = None
                         self.render()
@@ -1432,7 +1566,9 @@ class Creator(QMainWindow):
                     instruction = ('Deck pack installed. Enable it in the ReSkate launcher. Previous tool exports are backed up in .deck-tool-backups beside the mod folder.'
                         if Path(result).is_dir() else 'Install this ZIP through the ReSkate launcher, or extract its mod folder into Mods. No manual Studio import is needed.'
                         if Path(result).suffix.lower()=='.zip' else 'Import this FBMOD in Studio when you want to build or edit it.')
-                    QMessageBox.information(self,'Export complete',instruction+'\n\nRequires SDEC, installed separately from Thunderstore. The tool does not download or bundle it.\n\nhttps://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/\n\n'+result)
+                    runtime_note=('Requires the SDEC 2.1.0 runtime. Install the companion CD renderer ZIP once, and keep it enabled alongside your deck.'
+                        if any(cd_finish.enabled(d) or surface_finish.settings(d.get('surface_finish'))['shimmer'] for d in self.decks) else 'Requires SDEC, installed separately from Thunderstore. The tool does not download or bundle it.\n\nhttps://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/')
+                    QMessageBox.information(self,'Export complete',instruction+'\n\n'+runtime_note+'\n\n'+result)
                 else:
                     QMessageBox.critical(self,'Operation failed',result)
             elif kind=='depth':
@@ -1477,11 +1613,16 @@ class Creator(QMainWindow):
         self.render_reset()
 
     def render(self):
+        if not self.isVisible() or self.isMinimized():return
         active_renderer = self.active_preview_renderer()
         mode = self.current()['mode']
         angle,bands = self.angle.value()/100,self.bands.value()/100
         gif_index = self.clip.frame_index(((time.monotonic()-self.started)*1000)%self.clip.duration_ms) if self.clip else None
-        size = (120,480) if self.angle.slider.isSliderDown() or self.orbit_dragging else (180,720) if not self.large else (320,1280)
+        quality=self.preview_quality.currentIndex() if hasattr(self,'preview_quality') else 1
+        width=(120,180,256)[quality]
+        if self.angle.slider.isSliderDown() or self.orbit_dragging:width=min(width,96)
+        elif self.large:width=min(320,width*2)
+        size=(width,width*4)
         surface_state = (self.view_mode.currentText(),self.studio_light.isChecked(),self.board.yaw,self.board.pitch)
         key = (self.revision,angle,bands,self.detail_toggle.isChecked(),gif_index,size,self.live_placement,surface_state,active_renderer is self.export_renderer and active_renderer is not None)
         self.frame_request_key = key
@@ -1508,12 +1649,18 @@ class Creator(QMainWindow):
             threading.Thread(target=draw, daemon=True).start()
             return
         if self.clip:
-            if gif_index not in self.gif_cache:
+            cache_key=(gif_index,size)
+            if cache_key not in self.gif_cache:
                 d = self.current()
-                self.gif_cache[gif_index] = animation_texture.preview_frame(self.clip,gif_index,d['background'],d['placement'][0])
-                while len(self.gif_cache)>4:
+                self.gif_cache[cache_key] = animation_texture.preview_frame(self.clip,gif_index,d['background'],d['placement'][0],size=size)
+                while len(self.gif_cache)>2:
                     self.gif_cache.pop(next(iter(self.gif_cache)))
-            image = self.gif_cache[gif_index]
+            image = self.gif_cache[cache_key]
+            finish=surface_finish.settings(self.current().get('surface_finish'))
+            if finish['shimmer']:
+                image=image.resize(size,Image.Resampling.LANCZOS)
+                sw,sh=size;su=(np.arange(sw)[None,:]+.5)/sw;sv=(np.arange(sh)[:,None]+.5)/sh
+                image=surface_finish.preview(image,angle,su,sv,(.79,.02,finish['strength']))
         elif self.live_placement and self.placement_sources is not None:
             image = self.placement_frame(size)
         elif self.renderer:
@@ -1560,7 +1707,8 @@ class Creator(QMainWindow):
         mode = self.current()['mode']
         angle, bands = key[1:3]
         self.last_key = key
-        self.preview_title.setText('Deck preview · positioning' if self.live_placement and not self.clip else 'Deck preview · export texture' if key[-1] else 'Deck preview')
+        cd_on=self.current().get('mode')=='cd'
+        self.preview_title.setText('CD finish preview · approximate lighting' if cd_on else 'Deck preview · positioning' if self.live_placement and not self.clip else 'Deck preview · export texture' if key[-1] else 'Deck preview')
         if not prepared:
             image = board_preview.map_artwork(image)
         pixmap = QPixmap.fromImage(qt_image(image))
@@ -1690,7 +1838,7 @@ class Creator(QMainWindow):
     def make_thumbnail(self):
         d = self.current()
         custom = d.get('thumbnail')
-        label={'neon':'NEON','liquid':'LIQUID','gif':'ANIMATED','metal':'METALLIC','ink':'INK FLOW','window':'WINDOW'}.get(d['mode'],'LENTICULAR')
+        label={'cd':'CD HOLOGRAM','ghost':'GHOST RARE','depth':'DEPTH','layers':'PARALLAX','neon':'NEON','liquid':'LIQUID','gif':'ANIMATED','metal':'METALLIC','ink':'INK FLOW','window':'WINDOW'}.get(d['mode'],'LENTICULAR')
         self.thumb_name.setText(Path(custom).name if custom else 'Automatic · transparent background + '+label)
         try:
             sources = self.thumbnail_sources if self.renderer or self.clip else [None,None]
@@ -1719,18 +1867,49 @@ class Creator(QMainWindow):
 
     def adjust_image(self):
         self.placement_open = True
+        self.inspector_tabs.setCurrentIndex(0)
         self.update_inspectors()
-        self.inspectors.ensureWidgetVisible(self.placement)
+        self.artwork_scroll.ensureWidgetVisible(self.placement)
         self.choose_placement(self.placement_choice.currentIndex())
 
     def close_placement(self):
         self.placement_open = False
+        self.inspector_tabs.setCurrentIndex(1)
         self.update_inspectors()
 
     def update_inspectors(self):
         lens = self.current()['mode'] in ('depth','layers') and self.current().get('lenticular',True) and self.detail_toggle.isChecked()
         self.detail_box.setVisible(lens)
-        self.placement.setVisible(self.placement_open)
+        self.placement.setVisible(True)
+        if hasattr(self,'inspector_tabs'):
+            self.placement_open=self.inspector_tabs.currentIndex()==0
+            self.board.edit_artwork=self.placement_open
+            if self.placement_open and self.placement_index is None:self.choose_placement(self.placement_choice.currentIndex())
+
+    def inspector_tab_changed(self,index):
+        self.placement_open=index==0
+        self.board.edit_artwork=index==0
+        self.board.setCursor(Qt.SizeAllCursor if index==0 else Qt.ArrowCursor)
+        if index==0:
+            self.view_mode.setCurrentText('2D')
+            self.choose_placement(self.placement_choice.currentIndex())
+        self.view_mode.setEnabled(index!=0)
+        if index!=0:self.finish_placement()
+
+    def drag_artwork(self,dx,dy):
+        if not self.placement_open or self.busy:return
+        if self.placement_index is None:self.choose_placement(self.placement_choice.currentIndex())
+        for key,delta in [('x',dx),('y',dy)]:
+            control=self.positions[key];control.set_value(max(-500,min(500,control.value()+delta*100)))
+        self.move_image()
+
+    def zoom_artwork(self,factor):
+        if not self.placement_open or self.busy:return
+        control=self.positions['zoom'];control.set_value(max(1,min(2000,control.value()*factor)));self.move_image()
+
+    def rotate_artwork(self,degrees):
+        if not self.placement_open or self.busy:return
+        control=self.positions['rotation'];control.set_value((control.value()+degrees+180)%360-180);self.move_image()
 
     def choose_placement(self,index):
         if index<0:return
@@ -1739,32 +1918,56 @@ class Creator(QMainWindow):
         self.loading = True
         for key,control in self.positions.items():
             setting=self.current().get('middle_placement',{}) if index==2 else self.current()['placement'][index]
-            control.set_value(setting.get(key,1 if key=='zoom' else 0)*100)
+            control.set_value(setting.get(key,1 if key=='zoom' else 0)*(1 if key=='rotation' else 100))
         self.loading = was_loading
+        self.previous_placement=copy.deepcopy(self.current().get('middle_placement',{}) if index==2 else self.current()['placement'][index])
         if not was_loading and self.current()['mode']=='classic':
             self.angle.spin.setValue(100 if index==0 else -100)
 
     def move_image(self,*args):
         if self.loading or self.placement_index is None:
             return
-        setting = {key:control.value()/100 for key,control in self.positions.items()}
+        setting = {key:control.value()/(1 if key=='rotation' else 100) for key,control in self.positions.items()}
         d = self.current()
         if self.placement_index==2:d['middle_placement']=setting
         else:d['placement'][self.placement_index] = setting
-        if d['mode'] in ('depth','ghost'):
-            d['placement'][1-self.placement_index] = copy.deepcopy(setting)
-        self.schedule()
+        if d.get('link_transforms',d['mode'] in ('depth','ghost','cd')) and self.placement_index in (0,1):
+            other=1-self.placement_index
+            previous=getattr(self,'previous_placement',None)
+            if previous is not None:
+                target=d['placement'][other]
+                ratio=setting['zoom']/max(previous.get('zoom',1),.0001)
+                target.update(zoom=target.get('zoom',1)*ratio,
+                    x=target.get('x',0)+setting['x']-previous.get('x',0),
+                    y=target.get('y',0)+setting['y']-previous.get('y',0),
+                    rotation=target.get('rotation',0)+setting['rotation']-previous.get('rotation',0))
+        self.previous_placement=copy.deepcopy(setting)
+        self.revision+=1;self.pending=None;self.last_key=None
+        self.preview_timer.start(180)
         self.live_placement = self.clip is not None or self.placement_source_key==tuple(d['images'])
         self.status.setText('Positioning artwork · effect refreshes after release')
-        self.render_reset()
+        if hasattr(self,'placement_render_timer'):
+            if not self.placement_render_timer.isActive():self.placement_render_timer.start(33)
+        else:self.render_reset()
 
     def finish_placement(self):
         if self.live_placement:
             self.preview_timer.start(0)
 
     def placement_frame(self,size):
-        width = min(size[0],144)
-        return live_placement.render(self.placement_sources,self.current(),self.angle.value()/100,(width,width*4))
+        width = min(size[0],96)
+        cache_key=tuple(id(source) for source in self.placement_sources)
+        if getattr(self,'small_placement_key',None)!=cache_key:
+            self.small_placement_sources=[]
+            for source in self.placement_sources:
+                if isinstance(source,Image.Image):
+                    small=source.copy();small.thumbnail((384,1536),Image.Resampling.BILINEAR)
+                else:
+                    with Image.open(source) as original:
+                        small=original.copy();small.thumbnail((384,1536),Image.Resampling.BILINEAR)
+                self.small_placement_sources.append(small)
+            self.small_placement_key=cache_key
+        return live_placement.render(self.small_placement_sources,self.current(),self.angle.value()/100,(width,width*4))
 
     def reset_placement(self):
         if self.placement_index is not None:

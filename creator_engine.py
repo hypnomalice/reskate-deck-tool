@@ -114,6 +114,9 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
     import tempfile
     import image_placement
     projects = copy.deepcopy(projects)
+    for project in projects:
+        if project.get('mode')=='cd':
+            project['mode']='ghost';project.setdefault('cd',{})['enabled']=True
     with tempfile.TemporaryDirectory(prefix='lenticular-framing-') as scratch:
         for number, project in enumerate(projects):
             originals = project['images']
@@ -145,7 +148,7 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
                         target=Path(scratch)/f'{number}-ghost-{finish}.png';mask.save(target);cfg['mask']=str(target)
             placements = project.get('placement')
             background_fit = project.get('background_fit') if project.get('mode')=='layers' else None
-            if not background_fit and (not placements or all(all(float(p.get(k,d)) == d for k,d in [('zoom',1),('x',0),('y',0)]) for p in placements)):
+            if not background_fit and (not placements or all(all(float(p.get(k,d)) == d for k,d in [('zoom',1),('x',0),('y',0),('rotation',0)]) for p in placements)):
                 continue
             placements = placements or [dict(zoom=1,x=0,y=0)]*2
             if len(placements) != 2:
@@ -171,6 +174,19 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     title=validate_name(title)
     if '\0' in author:raise ValueError('Author cannot contain a null character.')
     names=set();decks=[]
+    import cd_finish,hashlib
+    cd_atlases={}
+    import surface_finish
+    base_encode=globals()['encode']
+    def encode(image,progress=lambda message:None,**options):
+        image=image if cd_finish.enabled(project) else surface_finish.mark(image,project.get('surface_finish'))
+        lossless=cd_finish.enabled(project) or surface_finish.smooth_depth(project)
+        if lossless:image=image.convert('RGBA')
+        if lossless:options['mipmaps']=False
+        payload=base_encode(image,progress,**options)
+        if lossless:cd_atlases[hashlib.sha256(payload).hexdigest()]=image
+        return payload
+
     for number,project in enumerate(projects,1):
         name=validate_name(project['name'])
         if name.casefold() in names:raise ValueError('Every deck in a pack needs a different name.')
@@ -241,10 +257,12 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
                 if mode=='ghost' or not project.get('lenticular',True):
                     import smooth_effect
                     packed=smooth_effect.pack(image,depth,settings.get('strength',.075),settings.get('convergence',.5),mode=='ghost',project.get('ghost'))
+                    if cd_finish.enabled(project):
+                        packed=cd_finish.pack(image,depth,project.get('cd'))
                     texture=encode(packed,progress,mipmaps=False)
                     if mode=='ghost':
                         from effect_preview import AtlasPreview
-                        preview=AtlasPreview(packed,'ghost');views=[preview.render(a,(256,1024)) for a in (-.4,.4)]
+                        preview=AtlasPreview(packed,'cd' if cd_finish.enabled(project) else 'ghost');views=[preview.render(a,(256,1024)) for a in (-.4,.4)]
                     else:views=[image,image]
                 else:
                     views=depth_views.views(image,depth,settings.get('strength',.04),settings.get('convergence',.5),progress)
@@ -265,7 +283,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             tinted=Image.merge('RGB',tuple(grain.point([min(255,round(value/average*channel*intensity)) for value in range(256)]) for channel in colour))
             progress('Preparing wood colour texture…')
             wood=b''.join(encode_thumbnail(tinted.resize((max(4,1024>>level),max(4,2048>>level)),Image.Resampling.LANCZOS)) for level in range(12))
-        continuous=mode in ('ghost','metal','ink','window','liquid','neon') or (mode=='classic' and bool(project.get('extra_images'))) or (mode=='depth' and not project.get('lenticular',True)) or (mode=='layers' and bool(project.get('middle_image')))
+        continuous=surface_finish.smooth_depth(project) or mode in ('ghost','metal','ink','window','liquid','neon') or (mode=='classic' and bool(project.get('extra_images'))) or (mode=='depth' and not project.get('lenticular',True)) or (mode=='layers' and bool(project.get('middle_image')))
         decks.append(dict(name=name,mode='depth' if mode=='layers' or (mode=='classic' and project.get('extra_images')) else 'classic' if mode in ('gif','ghost','metal','ink','window','liquid','neon') else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' or continuous else None,resident=mode=='gif' or continuous,wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
     if _texture_only:
         return decks
@@ -279,8 +297,16 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     if shared_runtime:
         from effects_runtime import write_content_export
         progress('Preparing SDEC deck content…')
-        write_content_export(result,dest,overwrite=True)
+        if cd_atlases:
+            # Compatibility normalization recognizes BC7. Separate the core first,
+            # then replace only CD-owned artwork payloads with lossless depth.
+            from effects_runtime import split_pack
+            result,_,_=split_pack(result)
+            result=cd_finish.lossless_archive(result,cd_atlases)
+            temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
+        else:write_content_export(result,dest,overwrite=True)
         progress('Export complete.');return dest
+    if cd_atlases:result=cd_finish.lossless_archive(result,cd_atlases)
     temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
     progress('Export complete.');return dest
 

@@ -34,6 +34,8 @@ class PreviewSchedulingTests(unittest.TestCase):
         with patch.object(Creator, 'check_updates', lambda self: None):
             self.window = Creator()
         w = self.window
+        w.show()
+        w.preview_quality.setCurrentIndex(1)
         w.animation_timer.stop()
         w.renderer = SlowRenderer(); w.detail_renderer = None
         w.display_revision = w.revision; w.last_key = None
@@ -66,9 +68,9 @@ class PreviewSchedulingTests(unittest.TestCase):
     def test_drag_restores_resolution_and_old_deck_cannot_repaint(self):
         w = self.window
         w.angle.slider.setSliderDown(True); w.render()
-        self.wait_for(lambda: w.last_key is not None and w.last_key[5] == (120,480) and not w.frame_worker)
+        self.wait_for(lambda: w.last_key is not None and w.last_key[5] == (96,384) and not w.frame_worker)
         w.angle.slider.setSliderDown(False); w.render()
-        self.wait_for(lambda: w.last_key[5] == (180,720) and not w.frame_worker)
+        self.wait_for(lambda: w.last_key is not None and w.last_key[5] == (180,720) and not w.frame_worker)
         w.angle.spin.setValue(-40); w.schedule(clear=True)
         self.assertIsNone(w.board.frame)
         self.wait_for(lambda: not w.frame_worker)
@@ -80,7 +82,7 @@ class PreviewSchedulingTests(unittest.TestCase):
         w.view_mode.setCurrentText('3D')
         w.preview_orbit_changed(40,15,True)
         self.assertGreater(w.angle.value(),50)
-        self.wait_for(lambda: w.last_key is not None and w.last_key[5]==(120,480) and not w.frame_worker)
+        self.wait_for(lambda: w.last_key is not None and w.last_key[5]==(96,384) and not w.frame_worker)
         w.preview_orbit_changed(40,15,False)
         self.wait_for(lambda: w.last_key is not None and w.last_key[5]==(180,720) and not w.frame_worker)
         w.angle.spin.setValue(-100)

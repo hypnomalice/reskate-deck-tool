@@ -1,6 +1,10 @@
-# ReSkate Deck Tool 1.4.7
+# ReSkate Deck Tool 1.5.0
 
-Create Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
+Create Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, CD Hologram, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
+
+## Editor workflow
+
+The dark editor keeps the deck list and main effect selector on the left, the preview and viewing-angle slider in the centre, and Artwork / Effect / Finish tabs on the right. Artwork supports size, position, rotation and optional linked layer transforms. Plain wheel scrolling does not alter settings. Ctrl + wheel zooms artwork; Ctrl + Shift + wheel rotates it. See [1.5.0 release notes](docs/release-1.5.0.md).
 
 ## Direct installable export
 
@@ -56,3 +60,8 @@ Existing projects keep whole-board finishes. Selected areas require SDEC core **
 ## Source
 
 The source code is here, we had to use ai assistance to finally get the damn thing working, so any help removing the ai code and getting it fully human would be greatly appreciated
+
+
+## 1.5.0 — CD hologram and finishes
+
+See [CD Hologram controls](docs/cd-hologram.md). CD exports and optional white sheen require SDEC 2.1.0+. Update the existing core through Thunderstore; keep only one core enabled. No replacement game DLL is included.

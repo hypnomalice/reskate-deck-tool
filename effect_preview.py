@@ -17,10 +17,12 @@ def display(rgb):
 class AtlasPreview:
     def __init__(self, atlas, mode):
         self.pixels = linear(atlas.convert('RGB'))
+        self.alpha = np.asarray(atlas.convert('RGBA').getchannel('A'),dtype=np.float32)/255
         self.mode = mode
         self.height, self.width = self.pixels.shape[:2]
         self.settings = self.sample(.125, 56 / 4096)
         self.motion = self.sample(.375, 56 / 4096)
+        self.surface_marker=self.sample(.875,16/4096)
         self.cached_size, self.cached_samples = None, None
 
     def set_lens_strength(self, value):
@@ -53,6 +55,13 @@ class AtlasPreview:
         return top * (1 - ty) + bottom * ty
 
     def render(self, angle, size=(210, 840), region=(0, 0, 1, 1), view_profile=None, view_pose=None, material=False):
+        image=self._render_effect(angle,size,region,view_profile,view_pose,material)
+        import surface_finish
+        w,h=size;u=(np.arange(w,dtype=np.float32)[None,:]+.5)/w;v=(np.arange(h,dtype=np.float32)[:,None]+.5)/h
+        left,top,right,bottom=region;u=left+u*(right-left);v=top+v*(bottom-top)
+        return surface_finish.preview(image,angle,u,v,self.surface_marker)
+
+    def _render_effect(self, angle, size=(210, 840), region=(0, 0, 1, 1), view_profile=None, view_pose=None, material=False):
         width, height = size
         u = (np.arange(width, dtype=np.float32)[None, :] + .5) / width
         v = (np.arange(height, dtype=np.float32)[:, None] + .5) / height
@@ -60,9 +69,12 @@ class AtlasPreview:
         u = left + u * (right - left)
         v = top + v * (bottom - top)
         angle = float(np.clip(angle, -1, 1))
-        if view_profile is not None and self.mode not in ('metal','ink','window','liquid','neon'):
+        if view_profile is not None and self.mode not in ('metal','ink','window','liquid','neon','cd'):
             bias,curve,*scale=view_profile
             angle=np.clip(angle*(scale[0] if scale else 1)+bias+curve*(u-.5),-1,1)
+        if self.mode=='cd':
+            import cd_finish
+            return display(cd_finish.render(self,angle,u,v))
         if self.mode in ('multi','neon'):
             import advanced_atlas
             return advanced_atlas.render(self,angle,u,v,material=material)

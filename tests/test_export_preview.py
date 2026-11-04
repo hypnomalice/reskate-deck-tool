@@ -19,6 +19,7 @@ class ExportPreviewTests(unittest.TestCase):
             depth = Image.new('L',art.size,128)
             art.save(root/'art.png'); depth.save(root/'depth.png')
             project = dict(name='Preview parity',mode='ghost',images=[str(root/'art.png'),str(root/'depth.png')],
+                           surface_finish={'smooth_depth':False},
                            fit='Stretch',background='#000000',placement=[dict(zoom=1.2,x=.1,y=-.1),{}],
                            ghost={'silver':{'selection':'colour','colour':'#d67c43','tolerance':.1}})
             original = copy.deepcopy(project)

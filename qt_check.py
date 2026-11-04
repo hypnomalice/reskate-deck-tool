@@ -38,6 +38,7 @@ def check(folder, projects):
         for index in range(len(window.decks)):
             window.selected = index
             window.apply_deck()
+            window.inspector_tabs.setCurrentIndex(1)
             start = time.monotonic()
             while (window.renderer is None and window.clip is None) or window.board.frame is None or window.last_key is None or window.last_key[0]!=window.revision:
                 app.processEvents()

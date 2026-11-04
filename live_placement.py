@@ -12,8 +12,9 @@ def render(sources, deck, angle, size=(180,720)):
     images = [image_placement.frame(source,
               deck['background_fit'] if mode=='layers' and index==1 else deck['fit'],
               deck['background'],deck.get('middle_placement',{}) if index==2 else deck['placement'][index],size=size,
-              alpha=(mode in ('layers','window','liquid') and index in (0,2)) or (mode=='neon' and index==1),depth=mode in ('depth','ink') and index==1)
+              alpha=(mode in ('layers','window','liquid') and index in (0,2)) or (mode=='neon' and index==1),depth=mode in ('depth','ghost','cd','ink') and index==1)
               for index,source in enumerate(sources)]
+    if mode=='cd':return images[0].convert('RGB')
     if mode=='neon' or (mode=='classic' and deck.get('extra_images')):
         from effect_preview import AtlasPreview
         import advanced_atlas
