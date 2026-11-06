@@ -13,7 +13,7 @@ from PIL import Image,ImageDraw
 FINISHES={'mirror':'Mirror silver','dye':'Dyed silver','cd_mirror':'CD mirror'}
 LAYOUTS={'full':'Full CD art','corner':'Corner CD art'}
 COLOURS={'separate':'Separate artwork colours','shared':'Match disc colours'}
-RUNTIME='SDEC 2.1.0+'
+RUNTIME='SDEC 2.1.1+'
 OPTICS={'original':'Original','reflection':'Mirror contrast','diffraction':'Stronger diffraction','combined':'Combined'}
 
 def settings(value=None):
@@ -25,7 +25,7 @@ def settings(value=None):
         if result[key] not in choices:raise ValueError('Unknown CD '+key+'.')
     result['optics']=value.get('optics','original')
     if result['optics'] not in OPTICS:raise ValueError('Unknown CD reflection response.')
-    for key,default,maximum in [('depth_strength',1,2),('faint_visibility',.175,1),('sheen_strength',1,2),('rim_strength',0,4),('boundary_strength',0,4),('scratch_strength',0,4),('scratch_amount',2,4)]:
+    for key,default,maximum in [('depth_strength',1.2,2),('faint_visibility',.175,1),('sheen_strength',1,2),('rim_strength',0,4),('boundary_strength',0,4),('scratch_strength',0,4),('scratch_amount',2,4)]:
         number=float(value.get(key,default))
         if not math.isfinite(number) or not 0<=number<=maximum:raise ValueError('Invalid CD '+key.replace('_',' ')+'.')
         result[key]=number
@@ -59,8 +59,10 @@ def pack(image,depth,value):
     def strip(column,row,values):
         draw.rectangle((column*128,row,column*128+127,row+7 if row==0 else row+15),fill=tuple(layer_atlas.encode_linear(x) for x in values)+(255,))
     # Row 32 is the four-part recognition header; never write over it.
-    strip(0,0,(.17,.73,.41))
-    strip(1,0,(0,value['faint_visibility'],value['sheen_strength']/2))
+    # V2 transports the original depth independently of motion strength.
+    # Legacy .41 atlases retain their existing baked-strength interpretation.
+    strip(0,0,(.17,.73,.45))
+    strip(1,0,(value['depth_strength']/2,value['faint_visibility'],value['sheen_strength']/2))
     strip(2,0,(value['rim_strength']/4,value['boundary_strength']/4,value['scratch_strength']/4))
     strip(3,0,(value['scratch_amount']/4,0,0))
     response={'reflection':.34,'diffraction':.42,'combined':.38}.get(value['optics'])
@@ -68,7 +70,7 @@ def pack(image,depth,value):
     if value['stronger_backing']:strip(2,8,(.66,.04,.94))
     if value['clear_layer']:strip(3,8,(.74,.06,.75))
     alpha=Image.new('L',atlas.size,255)
-    alpha.paste(depth.point([round(128+96*min(1,x/255*value['depth_strength'])) for x in range(256)]),(0,64));atlas.putalpha(alpha)
+    alpha.paste(depth.point([round(128+96*x/255) for x in range(256)]),(0,64));atlas.putalpha(alpha)
     return atlas
 
 def mip_payload(atlas):
@@ -109,6 +111,15 @@ def lossless_archive(data,atlases):
     if found!=set(atlases):raise ValueError('CD depth transport could not identify every selected artwork texture.')
     return a.bytes()
 
+def motion_offset(height_value, strength, view_x, *, legacy=False):
+    """Accepted centred CD relief; preserve legacy atlas interpretation."""
+    raw=np.asarray(height_value)-128/255
+    if legacy:return view_x*raw*.035
+    volume=np.clip(raw/(96/255),0,1)
+    centred=(volume-.5)*(96/255)*np.clip(volume/.05,0,1)
+    return view_x*centred*(float(strength)*4)*.035
+
+
 def render(renderer,angle,u,v):
     """Authored optical preview; scene lighting and mesh remain approximate."""
     x=math.sin(angle*.8);z=math.cos(angle*.8)
@@ -116,7 +127,8 @@ def render(renderer,angle,u,v):
     dyed=(.2<g<.4 or g>.8) and not polished
     separate=(.2<g<.4 or g>.8) if polished else r<.875
     controls=renderer.sample(.125,4/4096)
-    has_controls=.155<controls[0]<.185 and .715<controls[1]<.745
+    has_controls=.155<controls[0]<.185 and .715<controls[1]<.745 and .395<controls[2]<.465
+    motion_v2=has_controls and .435<controls[2]<.465
     params=renderer.sample(.375,4/4096)
     response=renderer.sample(.125,16/4096)
     active=.105<response[1]<.135 and .865<response[2]<.895
@@ -127,9 +139,20 @@ def render(renderer,angle,u,v):
         ix=np.clip(np.rint(a*512-.5).astype(int),0,511);iy=np.clip(np.rint(b*4096-.5).astype(int),0,4095)
         return alpha[iy,ix]
     av=64/4096+v*1984/4096
-    depth=height(u,av)-128/255
-    art_u=np.clip(u+x*depth*.035,.5/512,511.5/512)
+    art_u=np.clip(u+motion_offset(height(u,av),float(params[0])*2,x,legacy=not motion_v2),.5/512,511.5/512)
     rgb=renderer.sample(art_u,av);art=np.sqrt(np.clip(rgb@np.array([.2126,.7152,.0722]),0,1))
+    holo_marker=renderer.sample(.375,16/4096)
+    depth_holo=motion_v2 and .50<holo_marker[0]<.54 and .26<holo_marker[1]<.30 and .89<holo_marker[2]<.93
+    holo_shift=0
+    if depth_holo:
+        hc=height(art_u,av)
+        ha=height(np.maximum(art_u-4/512,.5/512),av)
+        hb=height(np.minimum(art_u+4/512,511.5/512),av)
+        safe=(np.abs(ha-hc)<.08)&(np.abs(hb-hc)<.08)
+        sx=np.where(safe,np.clip((hb-ha)*(.25*512/8/(96/255)),-.5,.5),0)
+        tilt=sx*x
+        holo_shift=tilt*220
+        art=art*(1+np.clip(tilt*1.8,-.55,.55))
     gx=(u+(.85 if corner else -.4805))*.205;gy=(v-(.5 if corner else .5434))*.794
     rad2=gx*gx+gy*gy;inv=1/np.sqrt(np.maximum(rad2,1e-6));nx=gx*inv;ny=gy*inv
     lx=.7*x+.22;ly=-.26;lz=.7*z;ln=math.sqrt(lx*lx+ly*ly+lz*lz);kx=x+lx/ln;ky=ly/ln
@@ -144,7 +167,7 @@ def render(renderer,angle,u,v):
             gain=.064*math.sqrt(math.pi)*spread*width/(5*math.sqrt(variance))
             channels.append(np.exp(-(wave-mu)**2/variance)*gain*visibility)
         return np.stack(np.broadcast_arrays(*channels),-1)
-    base=spectrum(wave,18);image=spectrum(wave-85 if separate else wave,18)
+    base=spectrum(wave,18);image=spectrum((wave-85 if separate else wave)+holo_shift,18)
     def scale(a,gain):return a*gain/np.sqrt(1+(np.max(a,axis=-1,keepdims=True)*gain)**2)
     core=np.clip((rad2-.000025)/.0012,0,1);core=core*core*(3-2*core)
     backing_marker=renderer.sample(.625,16/4096)
@@ -179,8 +202,8 @@ def render(renderer,angle,u,v):
             px=(u-a)*.205;py=(v-b)*.794;dx=du*.205;dy=dv*.794
             t=np.clip((px*dx+py*dy)/(dx*dx+dy*dy),0,1)
             distance=np.sqrt((px-t*dx)**2+(py-t*dy)**2)
-            scratches+=np.exp(-(distance/footprint)**2)*(.0001/footprint)*math.exp(-((x-catch)/.18)**2)
-        light=rim+np.minimum(scratches,1)*details[2]*.14
+            scratches+=np.exp(-(distance/max(.00035,footprint))**2)*(.00035/max(.00035,footprint))*(.12+.88*math.exp(-((x-catch)/.45)**2))
+        light=rim+np.minimum(scratches,1)*details[2]*.55
         result+=light[...,None]*(1-np.clip(result,0,1))
     if not corner:
         radius=np.sqrt(rad2);hub=radius<.046;hole=radius<.017

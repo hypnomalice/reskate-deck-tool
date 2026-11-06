@@ -938,9 +938,9 @@ class Creator(QMainWindow):
         self.cd_clear=QCheckBox('Clear-layer white sheen');self.cd_clear.toggled.connect(self.changed);cd_form.addRow(self.cd_clear)
         self.cd_backing=QCheckBox('Stronger backing rainbow');self.cd_backing.toggled.connect(self.changed);cd_form.addRow(self.cd_backing)
         self.cd_controls={}
-        for key,title,default,maximum in [('depth_strength','Artwork depth',100,200),('faint_visibility','Faint artwork visibility',18,100),('sheen_strength','Clear-layer sheen strength',100,200),('rim_strength','Clear rim strength',0,400),('boundary_strength','Recording-area boundary',0,400),('scratch_strength','Scratch strength',0,400),('scratch_amount','Scratch amount',2,4)]:
+        for key,title,default,maximum in [('depth_strength','Artwork depth movement',120,200),('faint_visibility','Faint artwork visibility',18,100),('sheen_strength','Clear-layer sheen strength',100,200),('rim_strength','Clear rim strength',0,400),('boundary_strength','Recording-area boundary',0,400),('scratch_strength','Scratch strength',0,400),('scratch_amount','Scratch amount',2,4)]:
             control=Adjustment(title,default,0,maximum);control.changed.connect(self.changed);cd_form.addRow(control);self.cd_controls[key]=control
-        cd_help=QLabel('Choose a full disc or a clipped corner, then its backing and reflection response. Surface details are optional; 100% is the tested strength. Requires SDEC 2.1.0 or newer. Preview lighting is approximate.')
+        cd_help=QLabel('Choose a full disc or a clipped corner, then its backing and reflection response. Surface details are optional; 100% is the tested strength. Depth movement preserves the source map; 120% uses the accepted centred relief. Requires SDEC 2.1.1 or newer. Preview lighting is approximate.')
         cd_help.setWordWrap(True);cd_form.addRow(cd_help);effects.addWidget(self.cd_box)
         self.surface_box=QGroupBox('Optional surface finish')
         surface_form=QFormLayout(self.surface_box)

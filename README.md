@@ -1,6 +1,10 @@
-# ReSkate Deck Tool 1.5.0
+# ReSkate Deck Tool 1.5.1
 
 Create Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, CD Hologram, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
+
+## 1.5.1 � centred CD artwork depth
+
+CD depth movement now uses the accepted centred relief response. The preview follows that response, original depth gradients are preserved, and optional scratch visibility is improved. CD depth changes require **SDEC 2.1.1 or newer**. **SDEC must be number 1 in your mod list.** Depth-driven holographic relief remains experimental and is not enabled by normal exports. See [1.5.1 release notes](docs/release-1.5.1.md).
 
 ## Editor workflow
 

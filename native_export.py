@@ -100,8 +100,8 @@ def export_zip(projects, destination, progress=lambda message: None, *, title, a
                     hashes[relative] = _digest(file)
                 readme = (
                     f'{title}\n\nInstall this ZIP through the ReSkate launcher, or extract its {name} folder into Mods. '
-                    'Keep one current SDEC core enabled alongside this content pack.\n'
-                    'CD hologram and optional sheen require SDEC 2.1.0 or newer.\n'
+                    'Keep one current SDEC core enabled at number 1 (the very top) of your mod list.\n'
+                    'CD depth movement requires SDEC 2.1.1 or newer; optional sheen requires 2.1.0 or newer.\n'
                     'SDEC is installed separately from Thunderstore; it is not downloaded or bundled here.\n'
                     'https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/\n')
                 zipped.writestr(name+'/DECK TOOL README.txt', readme)
