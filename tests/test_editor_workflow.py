@@ -27,3 +27,12 @@ class EditorWorkflowTests(unittest.TestCase):
         self.w.inspector_tabs.setCurrentIndex(1);self.app.processEvents()
         self.assertFalse(self.w.strength.isVisible());self.assertFalse(self.w.convergence.isVisible())
         self.assertFalse(self.w.thumb_name.isVisible());self.assertFalse(self.w.pack_button.isVisible())
+
+    def test_holographic_and_palette_controls_roundtrip(self):
+        w=self.w;w.decks[0]['mode']='layers';w.apply_deck()
+        self.assertFalse(w.surface_holo.isChecked())
+        w.surface_holo.setChecked(True);w.surface_holo_strength.spin.setValue(72)
+        cfg=w.workspace()['decks'][0]['surface_finish']
+        self.assertTrue(cfg['holographic']);self.assertAlmostEqual(cfg['holo_strength'],.72)
+        w.decks[0]['mode']='glitch';w.apply_deck();w.glitch_colours.setCurrentIndex(2)
+        self.assertEqual(w.workspace()['decks'][0]['glitch']['colour_mode'],'two')

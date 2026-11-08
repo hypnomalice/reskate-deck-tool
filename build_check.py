@@ -9,6 +9,21 @@ import preview_depth
 from updates import newer_release
 from ebx_tools import Ebx
 
+def check_digital(folder):
+    folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
+    try:
+        image=folder/'art.png';Image.new('RGB',(512,2048),'#715382').save(image)
+        projects=[dict(name='Bundled '+mode,mode=mode,images=[str(image),str(image)]) for mode in ('glitch','eink','case')]
+        output=engine.export_pack(projects,folder/'Digital checks.fbmod',shared_runtime=True)
+        from fbmod_compat import Archive
+        a=Archive(output.read_bytes())
+        assert a.find(2,'characters/lua/skaterboardlualoaderasset') is not None
+        report=dict(ok=True,bundled_helper=True,mixed_export=True)
+    except Exception:
+        import traceback
+        report=dict(ok=False,error=traceback.format_exc())
+    (folder/'digital-check.json').write_text(json.dumps(report,indent=2),encoding='utf8')
+
 
 def check(folder):
     folder = Path(folder)
@@ -198,6 +213,11 @@ def check(folder):
         assert len(cd_headers)==1 and struct.unpack_from('<I',cd_headers[0],12)[0]==20 and cd_headers[0][30]==13
         assert not set(cd_archive.key(i) for i in range(len(cd_archive.blobs))) & shared_keys()
         report['cd_controls_and_rotated_export']=True
+        digital=[dict(name='Packaged '+mode,mode=mode,images=images) for mode in ('glitch','eink','case')]
+        exported=engine.export_pack(digital,folder/'Digital checks.fbmod',shared_runtime=True)
+        checked=Archive(exported.read_bytes())
+        assert checked.find(2,'characters/lua/skaterboardlualoaderasset') is not None
+        report['bundled_mesh_helper_and_digital_export']=True
 
 
     except Exception:

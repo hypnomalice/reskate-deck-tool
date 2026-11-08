@@ -1,10 +1,14 @@
-# ReSkate Deck Tool 1.6.1
+# ReSkate Deck Tool 1.6.2
 
-Create E-ink, Glitch, Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, CD Hologram, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
+Create Clear Case, E-ink, Glitch, Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, CD Hologram, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
+
+## 1.6.2 - export repair and shell finishes
+
+Requires **SDEC 2.1.4**, at **number 1** in the mod list. Glitch exports include their registration helper. Clear Case offers frosted/glossy plastic, tint, haze and internal movement. Glitch supports RGB, one-colour and two-colour palettes. Parallax and Depth Map have an explicit optional holographic overlay, off by default.
 
 ## 1.6.1 - preview repair
 
-Fixes artwork preview loading and adds clock-driven glitch preview animation. Clear Case authoring is not included in this release.
+Fixes artwork preview loading and adds clock-driven glitch preview animation. Clear Case authoring was added in 1.6.2.
 
 ## 1.6.0 - e-ink and lenticular plastic
 

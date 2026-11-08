@@ -411,7 +411,7 @@ class Creator(QMainWindow):
         try:
             for d in projects:
                 engine.validate_name(d['name'])
-                if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
+                if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch','case') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
                     raise ValueError('Choose the images for '+d['name']+'.')
             if len({engine.validate_name(d['name']).casefold() for d in projects})!=len(projects):
                 raise ValueError('Give each deck a different name.')
@@ -898,6 +898,18 @@ class Creator(QMainWindow):
         splitter.addWidget(preview)
         effectbox = QGroupBox('Effect settings')
         effects = QVBoxLayout(effectbox)
+        self.case_box=QGroupBox('Plastic shell (simulated)')
+        case_layout=QVBoxLayout(self.case_box)
+        self.case_style=QComboBox();self.case_style.addItems(['Frosted / hazy','Clear / glossy'])
+        self.case_style.currentIndexChanged.connect(self.changed);case_layout.addWidget(self.case_style)
+        self.case_tint=QPushButton('Shell tint');self.case_tint.clicked.connect(self.choose_case_tint);case_layout.addWidget(self.case_tint)
+        self.case_tint_strength=Adjustment('Tint strength',35,0,100)
+        self.case_haze=Adjustment('Internal blur',42,0,100)
+        self.case_depth=Adjustment('Internal movement',30,0,100)
+        for control in (self.case_tint_strength,self.case_haze,self.case_depth):
+            control.changed.connect(self.changed);case_layout.addWidget(control)
+        case_layout.addWidget(QLabel('Upload internal artwork. Plastic is simulated; the world is not visible through it.'))
+        effects.addWidget(self.case_box)
         self.digital_box=QGroupBox('Display behaviour')
         digital_layout=QVBoxLayout(self.digital_box)
         self.eink_span=Adjustment('Refresh span - degrees',90,20,160,tip='Wider spans refresh more slowly during the same board rotation. The refresh reacts to tilt; it is not an automatic timer.')
@@ -910,6 +922,12 @@ class Creator(QMainWindow):
             digital_layout.addWidget(control)
             (control.currentIndexChanged if control is self.glitch_style else control.changed).connect(self.changed)
         effects.addWidget(self.digital_box)
+        self.glitch_colours=QComboBox();self.glitch_colours.addItems(['RGB colours','One colour','Two colours'])
+        self.glitch_colours.currentIndexChanged.connect(self.changed);digital_layout.addWidget(self.glitch_colours)
+        self.glitch_colour1=QPushButton('First glitch colour');self.glitch_colour2=QPushButton('Second glitch colour')
+        self.glitch_colour1.clicked.connect(lambda:self.choose_glitch_colour('colour1'))
+        self.glitch_colour2.clicked.connect(lambda:self.choose_glitch_colour('colour2'))
+        digital_layout.addWidget(self.glitch_colour1);digital_layout.addWidget(self.glitch_colour2)
         self.strength = Adjustment('Depth strength',4,tip='Amount of parallax. Higher values move surfaces farther and can stretch newly revealed edges.')
         self.bands = Adjustment('Lens texture',100,tip='Fine view variation across the 112 lens bands. It changes edge detail, not a striped overlay. At low depth strength this is subtle; compare the enlarged crop. It does not brighten the material.')
         self.convergence = Adjustment('Stationary depth',50,tip='Depth map: the depth value that stays still. Layers: the share of movement assigned to the background.')
@@ -978,6 +996,10 @@ class Creator(QMainWindow):
         self.lens_ridge_strength.changed.connect(self.changed);surface_form.addRow(self.lens_ridge_strength)
         self.surface_shimmer=QCheckBox('White reflection shimmer')
         self.surface_shimmer.toggled.connect(self.changed);surface_form.addRow(self.surface_shimmer)
+        self.surface_holo=QCheckBox('Holographic overlay (optional)')
+        self.surface_holo.toggled.connect(self.changed);surface_form.addRow(self.surface_holo)
+        self.surface_holo_strength=Adjustment('Holographic strength',35,0,100)
+        self.surface_holo_strength.changed.connect(self.changed);surface_form.addRow(self.surface_holo_strength)
         self.surface_strength=Adjustment('Shimmer strength',35,0,100)
         self.surface_strength.changed.connect(self.changed);surface_form.addRow(self.surface_strength)
         self.smooth_depth=QCheckBox('Smooth depth gradients - larger textures')
@@ -1062,13 +1084,14 @@ class Creator(QMainWindow):
         d['cd']['normal']=dict(style=('automatic','custom','none')[self.normal_style.currentIndex()],path=self.normal_path,linked=self.normal_link.isChecked(),flip_y=self.normal_flip.isChecked(),strength=self.normal_controls['strength'].value()/100,placement={key:self.normal_controls[key].value()/(1 if key=='rotation' else 100) for key in ('zoom','x','y','rotation')})
         d['cd'].update(optics=list(cd_finish.OPTICS)[self.cd_optics.currentIndex()],clear_layer=self.cd_clear.isChecked(),stronger_backing=self.cd_backing.isChecked(),**{key:control.value()/(1 if key=='scratch_amount' else 100) for key,control in self.cd_controls.items()})
         d['lenticular_ridges']=self.lens_ridges.isChecked();d['ridge_strength']=self.lens_ridge_strength.value()/100
-        d['surface_finish']=dict(shimmer=self.surface_shimmer.isChecked(),strength=self.surface_strength.value()/100,smooth_depth=self.smooth_depth.isChecked())
+        d['surface_finish']=dict(shimmer=self.surface_shimmer.isChecked(),strength=self.surface_strength.value()/100,smooth_depth=self.smooth_depth.isChecked(),holographic=self.surface_holo.isChecked(),holo_strength=self.surface_holo_strength.value()/100)
         d['neon']=dict(selection='colour' if self.neon_method.currentIndex() else 'mask',colour=d.get('neon',{}).get('colour','#00dfff'),tolerance=self.neon_tolerance.value()/100,brightness=self.neon_brightness.value()/100)
         for kind,(method,mask_button,mask_name,colour_button,tolerance) in self.ghost_area_controls.items():
             cfg=d.setdefault('ghost',{}).setdefault(kind,{})
             cfg.update(selection=('all','mask','colour')[method.currentIndex()],tolerance=tolerance.value()/100)
+        d['case']=dict(finish=('frosted','glossy')[self.case_style.currentIndex()],tint=d.get('case',{}).get('tint','#d9e6e7'),tint_strength=self.case_tint_strength.value()/100,haze=self.case_haze.value()/100,depth=self.case_depth.value()*.0006)
         d['eink']=dict(span=self.eink_span.value()/90,ghosting=self.eink_ghosting.value()/100)
-        d['glitch']=dict(preset=('tearing','rgb','dropout')[self.glitch_style.currentIndex()],strength=self.glitch_strength.value()/100,density=self.glitch_density.value(),speed=self.glitch_speed.value())
+        d['glitch']=dict(preset=('tearing','rgb','dropout')[self.glitch_style.currentIndex()],strength=self.glitch_strength.value()/100,density=self.glitch_density.value(),speed=self.glitch_speed.value(),colour_mode=('rgb','one','two')[self.glitch_colours.currentIndex()],colour1=d.get('glitch',{}).get('colour1','#ff1744'),colour2=d.get('glitch',{}).get('colour2','#00e5ff'))
         d['ink']=dict(background_colour=d.get('ink',{}).get('background_colour','#242c42'),revealed_colour=d.get('ink',{}).get('revealed_colour','#88c0d3'),showthrough=self.ink_showthrough.value()/100,strength=self.ink_strength.value()/100,contrast=self.ink_contrast.value()/100,invert=self.ink_invert.isChecked())
         d['layer_depths']=[control.value()/100 for control in self.layer_depth_controls]
         d['liquid']=dict(colour=d.get('liquid',{}).get('colour','#9630d8'),cloudiness=self.liquid_cloud.value()/100,depth=.025+.155*self.liquid_depth.value()/100,amount=self.liquid_amount.value()/100,thickness=self.liquid_thickness.value()/100)
@@ -1107,9 +1130,15 @@ class Creator(QMainWindow):
             getattr(self,key).set_value(settings.get(key,default)*100)
         self.invert.setChecked(settings.get('invert',False))
         import digital_finish
+        import case_finish
+        cc=case_finish.settings(d.get('case'));self.case_style.setCurrentIndex(0 if cc['finish']=='frosted' else 1)
+        self.case_tint_strength.set_value(cc['tint_strength']*100);self.case_haze.set_value(cc['haze']*100);self.case_depth.set_value(cc['depth']/.0006)
+        self.case_tint.setText('Shell tint '+cc['tint'])
         ec=digital_finish.settings('eink',d.get('eink'));gc=digital_finish.settings('glitch',d.get('glitch'))
         self.eink_span.set_value(ec['span']*90);self.eink_ghosting.set_value(ec['ghosting']*100)
         self.glitch_style.setCurrentIndex(list(digital_finish.PRESETS).index(gc['preset']))
+        self.glitch_colours.setCurrentIndex(('rgb','one','two').index(gc['colour_mode']))
+        self.glitch_colour1.setText('First colour '+gc['colour1']);self.glitch_colour2.setText('Second colour '+gc['colour2'])
         self.glitch_strength.set_value(gc['strength']*100);self.glitch_density.set_value(gc['density']);self.glitch_speed.set_value(gc['speed'])
         cd=cd_finish.settings(d.get('cd'))
         normal=cd.get('normal',{});self.normal_path=normal.get('path','');self.normal_name.setText(Path(self.normal_path).name if self.normal_path else 'No normal map')
@@ -1122,6 +1151,7 @@ class Creator(QMainWindow):
         for key,control in self.cd_controls.items():control.set_value(cd[key]*(1 if key=='scratch_amount' else 100))
         self.lens_ridges.setChecked(d.get('lenticular_ridges',True));self.lens_ridge_strength.set_value(d.get('ridge_strength',.55)*100)
         surface=surface_finish.settings(d.get('surface_finish'));self.surface_shimmer.setChecked(surface['shimmer']);self.surface_strength.set_value(surface['strength']*100);self.smooth_depth.setChecked(surface['smooth_depth'])
+        self.surface_holo.setChecked(surface['holographic']);self.surface_holo_strength.set_value(surface['holo_strength']*100)
         ink=d.get('ink',{})
         self.ink_showthrough.set_value(ink.get('showthrough',0)*100)
         self.ink_strength.set_value(ink.get('strength',1)*100)
@@ -1163,7 +1193,7 @@ class Creator(QMainWindow):
             self.effect_picker.setCurrentIndex(self.mode.currentIndex()+1 if chosen else 0)
             self.effect_picker.blockSignals(False)
             self.inspector_tabs.setVisible(chosen)
-        names = {'eink':('Page 1','Page 2'),'glitch':('Artwork','Unused'),'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'ghost':('Colour image','Depth map'),'cd':('Artwork','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused'),'metal':('Graphic','Unused'),'ink':('Graphic','Reveal mask (white reveals ink)'),'window':('Front frame (transparent PNG)','Background'),'liquid':('Front image (transparent PNG)','Background'),'neon':('Artwork','Glow mask (white glows, black stays unlit)')}[mode]
+        names = {'case':('Internal artwork','Unused'),'eink':('Page 1','Page 2'),'glitch':('Artwork','Unused'),'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'ghost':('Colour image','Depth map'),'cd':('Artwork','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused'),'metal':('Graphic','Unused'),'ink':('Graphic','Reveal mask (white reveals ink)'),'window':('Front frame (transparent PNG)','Background'),'liquid':('Front image (transparent PNG)','Background'),'neon':('Artwork','Glow mask (white glows, black stays unlit)')}[mode]
         self.lenticular.setVisible(mode in ('depth','layers'))
         self.lenticular_help.setVisible(mode in ('depth','layers'))
         self.lenticular.setEnabled(not self.busy)
@@ -1171,9 +1201,11 @@ class Creator(QMainWindow):
             label.setText(names[i])
             self.image_names[i].setText(Path(self.current()['images'][i]).name if self.current()['images'][i] else '')
             for w in (label,self.image_names[i],self.image_buttons[i]):
-                w.setVisible(i==0 or (mode not in ('gif','metal','glitch') and not (mode=='neon' and self.neon_method.currentIndex()==1)))
+                w.setVisible(i==0 or (mode not in ('gif','metal','glitch','case') and not (mode=='neon' and self.neon_method.currentIndex()==1)))
         for w in (self.auto_button,self.auto_help):
             w.setVisible(mode in ('depth','ghost','cd'))
+        self.case_box.setVisible(mode=='case')
+        self.case_haze.setEnabled(self.case_style.currentIndex()==0 and not self.busy)
         self.digital_box.setVisible(mode in ('eink','glitch'))
         for control in (self.eink_span,self.eink_ghosting):control.setVisible(mode=='eink')
         for control in (self.glitch_style,self.glitch_strength,self.glitch_density,self.glitch_speed):control.setVisible(mode=='glitch')
@@ -1193,7 +1225,7 @@ class Creator(QMainWindow):
         self.middle_name.setText(Path(self.current()['middle_image']).name if self.current().get('middle_image') else '')
         for control in self.layer_depth_controls:control.setVisible(three)
         self.convergence.setVisible(not three)
-        count=1 if mode in ('metal','glitch') else 3 if (three or mode=='window' and self.current().get('middle_image')) else 2
+        count=1 if mode in ('metal','glitch','case') else 3 if (three or mode=='window' and self.current().get('middle_image')) else 2
         placement_labels=['Artwork','Depth map'] if mode in ('depth','ghost','cd') else ['Animation'] if mode=='gif' else ['Graphic'] if mode=='metal' else ['Front frame','Background','Object layer'][:count] if mode=='window' else ['Foreground','Background','Middle layer'] if three else ['First image','Second image']
         if [self.placement_choice.itemText(i) for i in range(self.placement_choice.count())]!=placement_labels:
             self.placement_choice.blockSignals(True)
@@ -1205,7 +1237,7 @@ class Creator(QMainWindow):
         self.bands.setEnabled(mode in ('depth','layers') and self.lenticular.isChecked() and not self.busy)
         self.bands.setVisible(mode in ('depth','layers') and self.lenticular.isChecked())
         for w in (self.strength,self.convergence,self.invert):
-            w.setVisible(mode not in ('classic','metal','ink','window','liquid','neon','eink','glitch') and not (three and w==self.convergence))
+            w.setVisible(mode not in ('classic','metal','ink','window','liquid','neon','eink','glitch','case') and not (three and w==self.convergence))
         for control in (self.ink_background,self.ink_revealed,self.ink_showthrough,self.ink_strength,self.ink_contrast,self.ink_invert):
             control.setVisible(mode=='ink');control.setEnabled(not self.busy)
         self.surface_strength.setEnabled(self.surface_shimmer.isChecked() and not self.busy)
@@ -1217,6 +1249,12 @@ class Creator(QMainWindow):
         if cd_on:
             self.strength.hide();self.convergence.hide()
         self.surface_box.setVisible(not cd_on)
+        holo_supported=mode in ('depth','layers')
+        self.surface_holo.setVisible(holo_supported);self.surface_holo_strength.setVisible(holo_supported)
+        self.surface_holo_strength.setEnabled(self.surface_holo.isChecked() and not self.busy)
+        self.glitch_colours.setVisible(mode=='glitch')
+        self.glitch_colour1.setVisible(mode=='glitch' and self.glitch_colours.currentIndex()>0)
+        self.glitch_colour2.setVisible(mode=='glitch' and self.glitch_colours.currentIndex()==2)
         self.lens_ridges.setVisible(mode=='classic');self.lens_ridge_strength.setVisible(mode=='classic')
         self.lens_ridge_strength.setEnabled(self.lens_ridges.isChecked() and not self.busy)
         for control in (self.cd_finish,self.cd_layout,self.cd_colours,self.cd_optics,self.cd_clear,self.cd_backing,*self.cd_controls.values()):control.setEnabled(cd_on and not self.busy)
@@ -1283,6 +1321,19 @@ class Creator(QMainWindow):
         cfg=self.current().setdefault('ink',{})
         colour=QColorDialog.getColor(QColor(cfg.get(key,defaults[key])),self,'Choose '+('background' if key=='background_colour' else 'revealed')+' ink colour')
         if colour.isValid():cfg[key]=colour.name();self.changed()
+
+    def choose_case_tint(self):
+        cfg=self.current().setdefault('case',{})
+        colour=QColorDialog.getColor(QColor(cfg.get('tint','#d9e6e7')),self,'Choose shell tint')
+        if colour.isValid():cfg['tint']=colour.name();self.case_tint.setText('Shell tint '+colour.name());self.changed()
+
+    def choose_glitch_colour(self,key):
+        cfg=self.current().setdefault('glitch',{})
+        colour=QColorDialog.getColor(QColor(cfg.get(key,'#ff1744' if key=='colour1' else '#00e5ff')),self,'Choose glitch colour')
+        if colour.isValid():
+            cfg[key]=colour.name()
+            (self.glitch_colour1 if key=='colour1' else self.glitch_colour2).setText(('First colour ' if key=='colour1' else 'Second colour ')+colour.name())
+            self.changed()
 
     def choose_neon_colour(self):
         colour=QColorDialog.getColor(QColor(self.current().get('neon',{}).get('colour','#00dfff')),self,'Choose artwork colour to glow')
@@ -1421,7 +1472,7 @@ class Creator(QMainWindow):
             return
         self.remember()
         d = copy.deepcopy(self.current())
-        if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
+        if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch','case') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
             self.status.setText('Choose the images for this effect.')
             self.make_thumbnail()
             return
@@ -1455,7 +1506,7 @@ class Creator(QMainWindow):
                     sources = cached_sources
                     if sources is None:
                         sources = []
-                        paths=(d['images'][:1] if d['mode'] in ('metal','glitch') or (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') else d['images'])+([d['middle_image']] if d['mode'] in ('layers','window') and d.get('middle_image') else [])
+                        paths=(d['images'][:1] if d['mode'] in ('metal','glitch','case') or (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') else d['images'])+([d['middle_image']] if d['mode'] in ('layers','window') and d.get('middle_image') else [])
                         for path in paths:
                             with Image.open(path) as source:
                                 source = ImageOps.exif_transpose(source).convert('RGBA')
@@ -1469,7 +1520,10 @@ class Creator(QMainWindow):
                         if revision!=self.revision:
                             raise InterruptedError()
                     preview_mode=d['mode']
-                    if d['mode'] in ('eink','glitch'):
+                    if d['mode']=='case':
+                        import case_finish
+                        atlas=case_finish.pack(images[0],d.get('case'));preview_mode='case';thumbs=[images[0],images[0]]
+                    elif d['mode'] in ('eink','glitch'):
                         import digital_finish
                         atlas=digital_finish.pack(d['mode'],images[0],images[1] if len(images)>1 else None,d.get(d['mode']))
                         preview_mode=d['mode'];thumbs=images

@@ -77,7 +77,9 @@ def export_zip(projects, destination, progress=lambda message: None, *, title, a
         creator_engine.export_pack(projects, content, progress, title=title, author=author, shared_runtime=True)
         progress('Compiling installable mod files; Studio stays closed…')
         stage = root/'compiled'
-        result = subprocess.run([str(cli), 'compile-mod', str(game), str(stage), str(content)],
+        command=[str(cli), 'compile-mod', str(game), str(stage), str(content)]
+        if any(p.get('mode') in ('eink','glitch') for p in projects):command.append('--board-loader-from-core')
+        result = subprocess.run(command,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace',
             timeout=900, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if result.returncode:

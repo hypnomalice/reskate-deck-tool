@@ -10,6 +10,9 @@ if __name__ == '__main__':
         except Exception as exc:
             import ctypes
             ctypes.windll.user32.MessageBoxW(None,str(exc),'Update could not be installed',16)
+    elif len(sys.argv) == 3 and sys.argv[1] == '--self-test-digital':
+        from build_check import check_digital
+        check_digital(sys.argv[2])
     elif len(sys.argv) == 3 and sys.argv[1] == '--self-test':
         from build_check import check
         check(sys.argv[2])

@@ -5,7 +5,7 @@ from fbmod_compat import Archive,unpack,pack
 from deck_archive import ebx_edit,descriptor_parts,resource,texture_rid,lookup_add
 from ebx_tools import Ebx
 
-def attach(data, names, glitch_names=()):
+def attach(data, names, glitch_names=(), *, shared_runtime=False):
     a=Archive(data);seed=Archive((Path(__file__).parent/'assets/eink-rim-mesh.fbmod').read_bytes())
     seen=set()
     for i in range(len(seed.blobs)):
@@ -29,6 +29,7 @@ def attach(data, names, glitch_names=()):
             seed.replace(ci,raw)
     def rid(ar,i):return struct.unpack_from('<Q',ar.descriptors[i],descriptor_parts(ar.descriptors[i])[2]+4)[0]
     selected=[i for i in range(10,26) if i!=20]
+    registration_pairs=[]
     for title in names:
         ns=uuid.uuid5(uuid.NAMESPACE_URL,'sdec/eink-rim/'+title.casefold())
         token=uuid.uuid5(uuid.NAMESPACE_URL,'reskate/lenticular/deck/'+title.casefold()).hex
@@ -84,11 +85,12 @@ def attach(data, names, glitch_names=()):
         oldap=seed.key(7)[1]
         newap='characters/customization/reskate/board_bottomart/lenticular_'+token+'_ap'
         pairs.append((oldap,newap))
-        helper=Path(__file__).parent.parent/'clear-case-test/fix_lookup.exe'
+        registration_pairs.extend(pairs)
+        helper=Path(__file__).parent/'assets/mesh-register.exe'
         if not helper.exists():raise RuntimeError('Private mesh registration helper unavailable; do not export an unregistered mesh')
         with tempfile.TemporaryDirectory() as folder:
             f=Path(folder);(f/'data').write_bytes(lr);(f/'meta').write_bytes(lm)
-            (f/'pairs').write_text(''.join(x+'\t'+y+'\n' for x,y in pairs),encoding='utf8')
+            (f/'pairs').write_text(''.join(x+'\t'+y+'\n' for x,y in registration_pairs),encoding='utf8')
             subprocess.run([str(helper),str(f/'data'),str(f/'meta'),str(f/'pairs'),str(f/'out'),str(f/'outmeta')],check=True,capture_output=True)
             lr=(f/'out').read_bytes();lm=(f/'outmeta').read_bytes()
         # Bundle table contains appearance routes; shader keys belong to the shared shader database.
