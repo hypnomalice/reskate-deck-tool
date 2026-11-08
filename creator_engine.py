@@ -115,11 +115,27 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
     import image_placement
     projects = copy.deepcopy(projects)
     for project in projects:
+        if project.get('mode')=='eink':
+            project.setdefault('wood_tint','#363936')
         if project.get('mode')=='cd':
             project['mode']='ghost';project.setdefault('cd',{})['enabled']=True
     with tempfile.TemporaryDirectory(prefix='lenticular-framing-') as scratch:
         for number, project in enumerate(projects):
             originals = project['images']
+            normal=project.get('cd',{}).get('normal')
+            if normal and normal.get('path') and normal.get('style','custom')=='custom':
+                import normal_layer
+                normal=normal_layer.settings(normal)
+                if Path(dest).resolve()==Path(normal['path']).resolve():
+                    raise ValueError('Choose a separate output file.')
+                if normal['linked']:
+                    normal['placement']=(project.get('placement') or [{}])[0]
+                # Prepare against the full artwork canvas before its export crop.
+                vector=normal_layer.frame(normal,project.get('fit','Stretch'))
+                import numpy as np
+                target=Path(scratch)/f'{number}-normal.png'
+                Image.fromarray(np.uint8(np.rint(np.clip(vector*.5+.5,0,1)*255))).save(target)
+                project['cd']['normal']=dict(path=str(target),strength=1,linked=False)
             if project.get('mode','classic')=='classic':
                 extra=project.get('extra_images',[])
                 if len(extra)>6:raise ValueError('Lenticular supports up to eight pictures.')
@@ -154,7 +170,7 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
             if len(placements) != 2:
                 raise ValueError('Two image placements are required.')
             for index, path in enumerate(originals):
-                if not path and project.get('mode') in ('metal','neon') and index==1:
+                if not path and project.get('mode') in ('metal','neon','glitch') and index==1:
                     continue
                 fit = background_fit if background_fit and index==1 else project.get('fit','Stretch')
                 image = image_placement.frame(path, fit, project.get('background','#ffffff'),
@@ -180,7 +196,10 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     base_encode=globals()['encode']
     def encode(image,progress=lambda message:None,**options):
         image=image if cd_finish.enabled(project) else surface_finish.mark(image,project.get('surface_finish'))
-        lossless=cd_finish.enabled(project) or surface_finish.smooth_depth(project)
+        if project.get('mode','classic')=='classic' and project.get('lenticular',True) and not project.get('extra_images') and not cd_finish.enabled(project) and project.get('lenticular_ridges',True):
+            import normal_layer
+            image=normal_layer.embed_lenticular(image,float(project.get('ridge_strength',.55)))
+        lossless=cd_finish.enabled(project) or surface_finish.smooth_depth(project) or project.get('mode') in ('eink','glitch')
         if lossless:image=image.convert('RGBA')
         if lossless:options['mipmaps']=False
         payload=base_encode(image,progress,**options)
@@ -193,11 +212,17 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         names.add(name.casefold())
         a,b=project['images'];fit=project.get('fit','Stretch');background=project.get('background','#ffffff');custom=project.get('thumbnail')
         mode=project.get('mode','classic')
-        if mode not in ['classic','depth','layers','gif','ghost','metal','ink','window','liquid','neon']:raise ValueError('Unsupported deck mode.')
+        if mode not in ['classic','depth','layers','gif','ghost','metal','ink','window','liquid','neon','eink','glitch']:raise ValueError('Unsupported deck mode.')
         if fit not in ['Stretch','Crop to fill','Fit entire image']:raise ValueError('Choose a supported image sizing option.')
         if dest in [Path(p).resolve() for p in [a,b,custom] if p]+[(ROOT/'engine/template.fbmod').resolve()]:raise ValueError('Choose a separate output file.')
         progress(f'Deck {number} of {len(projects)}: {name}')
-        if mode=='neon':
+        if mode in ('eink','glitch'):
+            import digital_finish
+            graphic=artwork(a,fit,background);second=artwork(b or a,fit,background)
+            packed=digital_finish.pack(mode,graphic,second,project.get(mode))
+            texture=encode(packed,progress,mipmaps=False)
+            thumb=thumbnail(digital_finish.paper(graphic) if mode=='eink' else graphic,digital_finish.paper(second) if mode=='eink' else second,custom,background=background,label='E-INK' if mode=='eink' else 'GLITCH')
+        elif mode=='neon':
             import advanced_atlas
             graphic=artwork(a,fit,background)
             mask=depth_views.layer_image(b,fit) if b else None
@@ -278,13 +303,13 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             intensity=float(project.get('wood_intensity',1))
             if len(colour)!=3 or not math.isfinite(intensity) or not 0<=intensity<=2:
                 raise ValueError('Wood intensity must be between 0 and 200%.')
-            grain=Image.open(deck_archive.ROOT.parent/'assets/board-wood.png').convert('L')
+            grain=Image.new('L',(1024,2048),128) if mode=='eink' else Image.open(deck_archive.ROOT.parent/'assets/board-wood.png').convert('L')
             average=max(1,ImageStat.Stat(grain).mean[0])
             tinted=Image.merge('RGB',tuple(grain.point([min(255,round(value/average*channel*intensity)) for value in range(256)]) for channel in colour))
             progress('Preparing wood colour texture…')
             wood=b''.join(encode_thumbnail(tinted.resize((max(4,1024>>level),max(4,2048>>level)),Image.Resampling.LANCZOS)) for level in range(12))
-        continuous=surface_finish.smooth_depth(project) or mode in ('ghost','metal','ink','window','liquid','neon') or (mode=='classic' and bool(project.get('extra_images'))) or (mode=='depth' and not project.get('lenticular',True)) or (mode=='layers' and bool(project.get('middle_image')))
-        decks.append(dict(name=name,mode='depth' if mode=='layers' or (mode=='classic' and project.get('extra_images')) else 'classic' if mode in ('gif','ghost','metal','ink','window','liquid','neon') else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' or continuous else None,resident=mode=='gif' or continuous,wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
+        continuous=surface_finish.smooth_depth(project) or mode in ('ghost','metal','ink','window','liquid','neon','eink','glitch') or (mode=='classic' and bool(project.get('extra_images'))) or (mode=='depth' and not project.get('lenticular',True)) or (mode=='layers' and bool(project.get('middle_image')))
+        decks.append(dict(name=name,mode='depth' if mode=='layers' or (mode=='classic' and project.get('extra_images')) else 'classic' if mode in ('gif','ghost','metal','ink','window','liquid','neon','eink','glitch') else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' or continuous else None,resident=mode=='gif' or continuous,wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
     if _texture_only:
         return decks
     result=deck_archive.build(decks,raw_cas,title,author.strip(),independent_shader=True)
@@ -293,6 +318,8 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     from fbmod_compat import compatible
     progress('Applying sticker compatibility…')
     result, _ = compatible(result)
+    rim_names=[p['name'] for p in projects if p.get('mode')=='glitch']
+
     dest.parent.mkdir(parents=True,exist_ok=True)
     if shared_runtime:
         from effects_runtime import write_content_export
@@ -305,8 +332,14 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             result=cd_finish.lossless_archive(result,cd_atlases)
             temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
         else:write_content_export(result,dest,overwrite=True)
+        if rim_names:
+            import eink_mesh
+            dest.write_bytes(eink_mesh.attach(dest.read_bytes(),rim_names,[p['name'] for p in projects if p.get('mode')=='glitch']))
         progress('Export complete.');return dest
     if cd_atlases:result=cd_finish.lossless_archive(result,cd_atlases)
+    if rim_names:
+        import eink_mesh
+        result=eink_mesh.attach(result,rim_names,[p['name'] for p in projects if p.get('mode')=='glitch'])
     temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
     progress('Export complete.');return dest
 

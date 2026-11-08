@@ -31,6 +31,8 @@ def settings(value=None):
         result[key]=number
     result['scratch_amount']=int(result['scratch_amount'])
     result['clear_layer']=value.get('clear_layer',True)
+    import normal_layer
+    result['normal']=normal_layer.settings(value.get('normal'))
     result['stronger_backing']=value.get('stronger_backing',False)
     if type(result['clear_layer']) is not bool or type(result['stronger_backing']) is not bool:raise ValueError('CD finish switches must be true or false.')
     return result
@@ -71,6 +73,9 @@ def pack(image,depth,value):
     if value['clear_layer']:strip(3,8,(.74,.06,.75))
     alpha=Image.new('L',atlas.size,255)
     alpha.paste(depth.point([round(128+96*x/255) for x in range(256)]),(0,64));atlas.putalpha(alpha)
+    if value.get('normal'):
+        import normal_layer
+        atlas=normal_layer.embed(atlas,value['normal'],value['layout'])
     return atlas
 
 def mip_payload(atlas):
@@ -205,6 +210,15 @@ def render(renderer,angle,u,v):
             scratches+=np.exp(-(distance/max(.00035,footprint))**2)*(.00035/max(.00035,footprint))*(.12+.88*math.exp(-((x-catch)/.45)**2))
         light=rim+np.minimum(scratches,1)*details[2]*.55
         result+=light[...,None]*(1-np.clip(result,0,1))
+    normal_marker=renderer.sample(.875,27/4096)
+    if np.all(np.abs(normal_marker-np.array([.31,.63,.87]))<.012):
+        # Illustrative local light, not a recreation of the game's environment.
+        normal=renderer.sample(u,.75+v*.25)*2-1
+        normal/=np.maximum(np.linalg.norm(normal,axis=-1,keepdims=True),1.e-5)
+        light=np.array([math.sin(angle*.8+.35),-.25,math.cos(angle*.8+.35)])
+        light/=np.linalg.norm(light)
+        delta=(np.sum(normal*light,axis=-1)-light[2])*.25
+        result=np.clip(result+delta[...,None],0,1)
     if not corner:
         radius=np.sqrt(rad2);hub=radius<.046;hole=radius<.017
         ring=.025+.025*z+.018*np.clip((radius-.017)/.023,0,1)

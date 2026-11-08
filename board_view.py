@@ -3,7 +3,7 @@ from functools import lru_cache
 import math
 from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPainterPathStroker, QPen, QPolygonF, QTransform
-from board_preview import surface, texture_uv, rotate, DECK_THICKNESS, CAMERA_DISTANCE, TRUCK_CENTRES, PLATE_CENTRES, PLATE_WIDTH, PLATE_LENGTH, BOLT_HALF_WIDTH, BOLT_HALF_LENGTH
+from board_preview import surface, texture_uv, rotate, DECK_THICKNESS, CAMERA_DISTANCE, TRUCK_CENTRES, PLATE_CENTRES, PLATE_WIDTH, PLATE_LENGTH, mounting_ports
 
 
 def draw_3d(painter, widget):
@@ -56,8 +56,8 @@ def draw_3d(painter, widget):
             corners=[point(.5+dx,centre+dv)[0] for dx,dv in [(-PLATE_WIDTH/2,-PLATE_LENGTH/2),(PLATE_WIDTH/2,-PLATE_LENGTH/2),(PLATE_WIDTH/2,PLATE_LENGTH/2),(-PLATE_WIDTH/2,PLATE_LENGTH/2)]]
             painter.drawPolygon(QPolygonF(corners))
             painter.drawLine(point(.04,axle)[0],point(.96,axle)[0])
-            for u in (.5-BOLT_HALF_WIDTH,.5+BOLT_HALF_WIDTH):
-                for offset in (-BOLT_HALF_LENGTH,BOLT_HALF_LENGTH):painter.drawEllipse(point(u,centre+offset)[0],2,2)
+        for u,v in mounting_ports():
+            painter.drawEllipse(point(u,v)[0],2,2)
     painter.setPen(QColor('#aeb7c1'))
     painter.drawText(QRectF(10,widget.height()-29,widget.width()-20,22),Qt.AlignCenter,
                      'Drag to orbit · Calibrated standard deck')

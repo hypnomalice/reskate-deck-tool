@@ -37,6 +37,25 @@ PLATE_WIDTH, PLATE_LENGTH = .28, .090
 BOLT_HALF_WIDTH, BOLT_HALF_LENGTH = .100, .033
 
 
+def mounting_ports():
+    """Eight mounting centres in visible-board coordinates (capture calibration)."""
+    return tuple((.5 + dx, centre + dv)
+                 for centre in PLATE_CENTRES
+                 for dx in (-BOLT_HALF_WIDTH, BOLT_HALF_WIDTH)
+                 for dv in (-BOLT_HALF_LENGTH, BOLT_HALF_LENGTH))
+
+
+def board_to_artwork(u, v):
+    """Inverse of map_artwork's crop; includes the donor's artwork offset once."""
+    left, top, right, bottom = ARTWORK_REGION
+    return left + u * (right-left), top + v * (bottom-top)
+
+
+def artwork_to_board(u, v):
+    left, top, right, bottom = ARTWORK_REGION
+    return (u-left)/(right-left), (v-top)/(bottom-top)
+
+
 def surface(u, v):
     """Procedural standard-deck profile, calibrated from aggregate capture measurements."""
     end = max(0., 1-v/NOSE_CAP) if v < .5 else max(0., 1-(1-v)/TAIL_CAP)

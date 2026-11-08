@@ -1,8 +1,12 @@
-# ReSkate Deck Tool 1.5.1
+# ReSkate Deck Tool 1.6.0
 
-Create Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, CD Hologram, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
+Create E-ink, Glitch, Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, CD Hologram, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
 
-## 1.5.1 � centred CD artwork depth
+## 1.6.0 - e-ink and lenticular plastic
+
+E-ink converts both pages to a four-tone paper palette and refreshes with board tilt. Refresh span controls how much rotation the wipe takes; it is not a timer or persistent display memory. The approved ridged plastic finish is enabled by default for two-image lenticular decks, with an on/off switch and strength control. Requires **SDEC 2.1.3 or newer**, placed **number 1** in the mod list.
+
+## 1.5.1 — centred CD artwork depth
 
 CD depth movement now uses the accepted centred relief response. The preview follows that response, original depth gradients are preserved, and optional scratch visibility is improved. CD depth changes require **SDEC 2.1.1 or newer**. **SDEC must be number 1 in your mod list.** Depth-driven holographic relief remains experimental and is not enabled by normal exports. See [1.5.1 release notes](docs/release-1.5.1.md).
 
@@ -43,12 +47,17 @@ Automatic thumbnails now use the same visible-artwork mapping as the deck previe
 ## New controls
 
 - Preview placement now uses the standard deck's measured artwork UV coverage instead of stretching the complete image over the visible board. The shader header is already handled by the renderer; it is not applied twice. Existing image positions and exported artwork are unchanged.
+
 - Switch the deck preview between **2D** and **3D**. Both use the same corrected artwork mapping. Drag the 3D view to orbit; double-click to reset. The enlarged preview follows the selected view.
+
 - The 3D shape is a procedural standard-deck approximation. Other custom shapes and in-game lighting can differ. The preview switch adds no experimental effects or game DLL requirement. Ghost Rare area selection needs the updated core described below.
 
 - Lenticular: choose 2–8 pictures. Move pictures up/down to set their viewing order. Original lens-strip transitions are retained; old two-image projects still open.
+
 - Neon: load artwork and a glow mask PNG. White glows, black stays unlit, grey reduces glow. Transparent mask pixels stay unlit. Glow takes its colour from the artwork.
+
 - Pick a colour: automatically selects matching artwork colours; tolerance controls how close they must be.
+
 - Neon brightness: 100% matches the approved Neon C test. The preview is illustrative; in-game exposure and bloom vary.
 
 All earlier effects, PNG transparency, placement, custom thumbnails, wood tint and project saving remain available. Examples/All Effects.json is a portable project with 15 test decks covering every effect and the main variants.
@@ -65,7 +74,7 @@ Existing projects keep whole-board finishes. Selected areas require SDEC core **
 
 The source code is here, we had to use ai assistance to finally get the damn thing working, so any help removing the ai code and getting it fully human would be greatly appreciated
 
-
 ## 1.5.0 — CD hologram and finishes
 
 See [CD Hologram controls](docs/cd-hologram.md). CD exports and optional white sheen require SDEC 2.1.0+. Update the existing core through Thunderstore; keep only one core enabled. No replacement game DLL is included.
+

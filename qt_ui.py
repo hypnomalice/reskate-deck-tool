@@ -411,7 +411,7 @@ class Creator(QMainWindow):
         try:
             for d in projects:
                 engine.validate_name(d['name'])
-                if not d['images'][0] or (d['mode'] not in ('gif','metal') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
+                if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
                     raise ValueError('Choose the images for '+d['name']+'.')
             if len({engine.validate_name(d['name']).casefold() for d in projects})!=len(projects):
                 raise ValueError('Give each deck a different name.')
@@ -898,6 +898,18 @@ class Creator(QMainWindow):
         splitter.addWidget(preview)
         effectbox = QGroupBox('Effect settings')
         effects = QVBoxLayout(effectbox)
+        self.digital_box=QGroupBox('Display behaviour')
+        digital_layout=QVBoxLayout(self.digital_box)
+        self.eink_span=Adjustment('Refresh span - degrees',90,20,160,tip='Wider spans refresh more slowly during the same board rotation. The refresh reacts to tilt; it is not an automatic timer.')
+        self.eink_ghosting=Adjustment('Previous-page residue',5.5,0,30,tip='Faint pigment left by the previous page after refreshing.')
+        self.glitch_style=QComboBox();self.glitch_style.addItems(['Scanline tearing','RGB breakup','Signal dropouts'])
+        self.glitch_strength=Adjustment('Glitch intensity',70,0,100,tip='Strength of tearing, colour separation and corrupted lines.')
+        self.glitch_density=Adjustment('Line count',180,20,240,tip='Higher values produce finer, smaller glitch lines.')
+        self.glitch_speed=Adjustment('Updates per second',15,1,30,tip='How often the digital corruption changes. Does not change game frame rate.')
+        for control in (self.eink_span,self.eink_ghosting,self.glitch_style,self.glitch_strength,self.glitch_density,self.glitch_speed):
+            digital_layout.addWidget(control)
+            (control.currentIndexChanged if control is self.glitch_style else control.changed).connect(self.changed)
+        effects.addWidget(self.digital_box)
         self.strength = Adjustment('Depth strength',4,tip='Amount of parallax. Higher values move surfaces farther and can stretch newly revealed edges.')
         self.bands = Adjustment('Lens texture',100,tip='Fine view variation across the 112 lens bands. It changes edge detail, not a striped overlay. At low depth strength this is subtle; compare the enlarged crop. It does not brighten the material.')
         self.convergence = Adjustment('Stationary depth',50,tip='Depth map: the depth value that stays still. Layers: the share of movement assigned to the background.')
@@ -938,12 +950,32 @@ class Creator(QMainWindow):
         self.cd_clear=QCheckBox('Clear-layer white sheen');self.cd_clear.toggled.connect(self.changed);cd_form.addRow(self.cd_clear)
         self.cd_backing=QCheckBox('Stronger backing rainbow');self.cd_backing.toggled.connect(self.changed);cd_form.addRow(self.cd_backing)
         self.cd_controls={}
+        self.normal_path=''
+        self.normal_style=QComboBox();self.normal_style.addItems(['Default disc tracks','Custom normal map','Off']);self.normal_style.currentIndexChanged.connect(self.changed);cd_form.addRow('Surface texture',self.normal_style)
+        self.normal_name=QLabel('No normal map');self.normal_name.setWordWrap(True)
+        normal_upload=QPushButton('Add normal map…');normal_upload.clicked.connect(self.choose_normal_map)
+        normal_remove=QPushButton('Remove normal map');normal_remove.clicked.connect(lambda:self.choose_normal_map(clear=True))
+        cd_form.addRow(normal_upload,normal_remove);cd_form.addRow(self.normal_name)
+        self.normal_link=QCheckBox('Link normal map to artwork placement');self.normal_link.setChecked(True)
+        self.normal_flip=QCheckBox('Flip normal map green channel')
+        for control in (self.normal_link,self.normal_flip):control.toggled.connect(self.changed);cd_form.addRow(control)
+        self.normal_controls={}
+        for key,title,default,minimum,maximum in [('strength','Normal map strength',100,0,400),('zoom','Normal map size',100,1,2000),('x','Normal map horizontal position',0,-500,500),('y','Normal map vertical position',0,-500,500),('rotation','Normal map rotation',0,-360,360)]:
+            control=Adjustment(title,default,minimum,maximum);control.changed.connect(self.changed);cd_form.addRow(control);self.normal_controls[key]=control
+        self.normal_style.currentIndexChanged.connect(self.normal_mode_changed)
+        self.normal_mode_changed()
+        normal_hint=QLabel('Default disc tracks follow the full/corner layout. Choose Custom to place your own tangent-space normal image, or Off for a smooth surface. Requires the experimental normal-map renderer; released SDEC ignores this layer. Lighting preview is approximate.')
+        normal_hint.setWordWrap(True);cd_form.addRow(normal_hint)
         for key,title,default,maximum in [('depth_strength','Artwork depth movement',120,200),('faint_visibility','Faint artwork visibility',18,100),('sheen_strength','Clear-layer sheen strength',100,200),('rim_strength','Clear rim strength',0,400),('boundary_strength','Recording-area boundary',0,400),('scratch_strength','Scratch strength',0,400),('scratch_amount','Scratch amount',2,4)]:
             control=Adjustment(title,default,0,maximum);control.changed.connect(self.changed);cd_form.addRow(control);self.cd_controls[key]=control
         cd_help=QLabel('Choose a full disc or a clipped corner, then its backing and reflection response. Surface details are optional; 100% is the tested strength. Depth movement preserves the source map; 120% uses the accepted centred relief. Requires SDEC 2.1.1 or newer. Preview lighting is approximate.')
         cd_help.setWordWrap(True);cd_form.addRow(cd_help);effects.addWidget(self.cd_box)
         self.surface_box=QGroupBox('Optional surface finish')
         surface_form=QFormLayout(self.surface_box)
+        self.lens_ridges=QCheckBox('Ridged lenticular plastic')
+        self.lens_ridges.toggled.connect(self.changed);surface_form.addRow(self.lens_ridges)
+        self.lens_ridge_strength=Adjustment('Plastic ridge strength',55,0,90)
+        self.lens_ridge_strength.changed.connect(self.changed);surface_form.addRow(self.lens_ridge_strength)
         self.surface_shimmer=QCheckBox('White reflection shimmer')
         self.surface_shimmer.toggled.connect(self.changed);surface_form.addRow(self.surface_shimmer)
         self.surface_strength=Adjustment('Shimmer strength',35,0,100)
@@ -1027,12 +1059,16 @@ class Creator(QMainWindow):
             depth=dict(strength=self.strength.value()/100,convergence=self.convergence.value()/100,bands=self.bands.value()/100,invert=self.invert.isChecked()),
             animation=dict(quality=(1,2,4)[self.quality.currentIndex()]),wood_tint=d.get('wood_colour',d.get('wood_tint') or '#b98a56') if self.wood_mode.currentIndex() else None,wood_intensity=self.intensity.value()/100)
         d['cd']=dict(enabled=list(MODES)[self.mode.currentIndex()]=='cd',finish=list(cd_finish.FINISHES)[self.cd_finish.currentIndex()],layout=('full','corner')[self.cd_layout.currentIndex()],colours=('separate','shared')[self.cd_colours.currentIndex()])
+        d['cd']['normal']=dict(style=('automatic','custom','none')[self.normal_style.currentIndex()],path=self.normal_path,linked=self.normal_link.isChecked(),flip_y=self.normal_flip.isChecked(),strength=self.normal_controls['strength'].value()/100,placement={key:self.normal_controls[key].value()/(1 if key=='rotation' else 100) for key in ('zoom','x','y','rotation')})
         d['cd'].update(optics=list(cd_finish.OPTICS)[self.cd_optics.currentIndex()],clear_layer=self.cd_clear.isChecked(),stronger_backing=self.cd_backing.isChecked(),**{key:control.value()/(1 if key=='scratch_amount' else 100) for key,control in self.cd_controls.items()})
+        d['lenticular_ridges']=self.lens_ridges.isChecked();d['ridge_strength']=self.lens_ridge_strength.value()/100
         d['surface_finish']=dict(shimmer=self.surface_shimmer.isChecked(),strength=self.surface_strength.value()/100,smooth_depth=self.smooth_depth.isChecked())
         d['neon']=dict(selection='colour' if self.neon_method.currentIndex() else 'mask',colour=d.get('neon',{}).get('colour','#00dfff'),tolerance=self.neon_tolerance.value()/100,brightness=self.neon_brightness.value()/100)
         for kind,(method,mask_button,mask_name,colour_button,tolerance) in self.ghost_area_controls.items():
             cfg=d.setdefault('ghost',{}).setdefault(kind,{})
             cfg.update(selection=('all','mask','colour')[method.currentIndex()],tolerance=tolerance.value()/100)
+        d['eink']=dict(span=self.eink_span.value()/90,ghosting=self.eink_ghosting.value()/100)
+        d['glitch']=dict(preset=('tearing','rgb','dropout')[self.glitch_style.currentIndex()],strength=self.glitch_strength.value()/100,density=self.glitch_density.value(),speed=self.glitch_speed.value())
         d['ink']=dict(background_colour=d.get('ink',{}).get('background_colour','#242c42'),revealed_colour=d.get('ink',{}).get('revealed_colour','#88c0d3'),showthrough=self.ink_showthrough.value()/100,strength=self.ink_strength.value()/100,contrast=self.ink_contrast.value()/100,invert=self.ink_invert.isChecked())
         d['layer_depths']=[control.value()/100 for control in self.layer_depth_controls]
         d['liquid']=dict(colour=d.get('liquid',{}).get('colour','#9630d8'),cloudiness=self.liquid_cloud.value()/100,depth=.025+.155*self.liquid_depth.value()/100,amount=self.liquid_amount.value()/100,thickness=self.liquid_thickness.value()/100)
@@ -1070,10 +1106,21 @@ class Creator(QMainWindow):
         for key,default in [('strength',.04),('convergence',.5),('bands',1)]:
             getattr(self,key).set_value(settings.get(key,default)*100)
         self.invert.setChecked(settings.get('invert',False))
+        import digital_finish
+        ec=digital_finish.settings('eink',d.get('eink'));gc=digital_finish.settings('glitch',d.get('glitch'))
+        self.eink_span.set_value(ec['span']*90);self.eink_ghosting.set_value(ec['ghosting']*100)
+        self.glitch_style.setCurrentIndex(list(digital_finish.PRESETS).index(gc['preset']))
+        self.glitch_strength.set_value(gc['strength']*100);self.glitch_density.set_value(gc['density']);self.glitch_speed.set_value(gc['speed'])
         cd=cd_finish.settings(d.get('cd'))
+        normal=cd.get('normal',{});self.normal_path=normal.get('path','');self.normal_name.setText(Path(self.normal_path).name if self.normal_path else 'No normal map')
+        self.normal_style.setCurrentIndex(('automatic','custom','none').index(normal.get('style','custom' if self.normal_path else 'automatic')))
+        self.normal_link.setChecked(normal.get('linked',True));self.normal_flip.setChecked(normal.get('flip_y',False))
+        self.normal_controls['strength'].set_value(normal.get('strength',1)*100)
+        for key in ('zoom','x','y','rotation'):self.normal_controls[key].set_value(normal.get('placement',{}).get(key,1 if key=='zoom' else 0)*(1 if key=='rotation' else 100))
         self.cd_finish.setCurrentIndex(list(cd_finish.FINISHES).index(cd['finish']));self.cd_layout.setCurrentIndex(0 if cd['layout']=='full' else 1);self.cd_colours.setCurrentIndex(0 if cd['colours']=='separate' else 1)
         self.cd_optics.setCurrentIndex(list(cd_finish.OPTICS).index(cd['optics']));self.cd_clear.setChecked(cd['clear_layer']);self.cd_backing.setChecked(cd['stronger_backing'])
         for key,control in self.cd_controls.items():control.set_value(cd[key]*(1 if key=='scratch_amount' else 100))
+        self.lens_ridges.setChecked(d.get('lenticular_ridges',True));self.lens_ridge_strength.set_value(d.get('ridge_strength',.55)*100)
         surface=surface_finish.settings(d.get('surface_finish'));self.surface_shimmer.setChecked(surface['shimmer']);self.surface_strength.set_value(surface['strength']*100);self.smooth_depth.setChecked(surface['smooth_depth'])
         ink=d.get('ink',{})
         self.ink_showthrough.set_value(ink.get('showthrough',0)*100)
@@ -1116,7 +1163,7 @@ class Creator(QMainWindow):
             self.effect_picker.setCurrentIndex(self.mode.currentIndex()+1 if chosen else 0)
             self.effect_picker.blockSignals(False)
             self.inspector_tabs.setVisible(chosen)
-        names = {'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'ghost':('Colour image','Depth map'),'cd':('Artwork','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused'),'metal':('Graphic','Unused'),'ink':('Graphic','Reveal mask (white reveals ink)'),'window':('Front frame (transparent PNG)','Background'),'liquid':('Front image (transparent PNG)','Background'),'neon':('Artwork','Glow mask (white glows, black stays unlit)')}[mode]
+        names = {'eink':('Page 1','Page 2'),'glitch':('Artwork','Unused'),'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'ghost':('Colour image','Depth map'),'cd':('Artwork','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused'),'metal':('Graphic','Unused'),'ink':('Graphic','Reveal mask (white reveals ink)'),'window':('Front frame (transparent PNG)','Background'),'liquid':('Front image (transparent PNG)','Background'),'neon':('Artwork','Glow mask (white glows, black stays unlit)')}[mode]
         self.lenticular.setVisible(mode in ('depth','layers'))
         self.lenticular_help.setVisible(mode in ('depth','layers'))
         self.lenticular.setEnabled(not self.busy)
@@ -1124,9 +1171,12 @@ class Creator(QMainWindow):
             label.setText(names[i])
             self.image_names[i].setText(Path(self.current()['images'][i]).name if self.current()['images'][i] else '')
             for w in (label,self.image_names[i],self.image_buttons[i]):
-                w.setVisible(i==0 or (mode not in ('gif','metal') and not (mode=='neon' and self.neon_method.currentIndex()==1)))
+                w.setVisible(i==0 or (mode not in ('gif','metal','glitch') and not (mode=='neon' and self.neon_method.currentIndex()==1)))
         for w in (self.auto_button,self.auto_help):
             w.setVisible(mode in ('depth','ghost','cd'))
+        self.digital_box.setVisible(mode in ('eink','glitch'))
+        for control in (self.eink_span,self.eink_ghosting):control.setVisible(mode=='eink')
+        for control in (self.glitch_style,self.glitch_strength,self.glitch_density,self.glitch_speed):control.setVisible(mode=='glitch')
         self.multi_panel.setVisible(mode=='classic')
         if mode=='classic':
             selected=self.picture_list.currentRow();self.picture_list.clear()
@@ -1143,7 +1193,7 @@ class Creator(QMainWindow):
         self.middle_name.setText(Path(self.current()['middle_image']).name if self.current().get('middle_image') else '')
         for control in self.layer_depth_controls:control.setVisible(three)
         self.convergence.setVisible(not three)
-        count=1 if mode=='metal' else 3 if (three or mode=='window' and self.current().get('middle_image')) else 2
+        count=1 if mode in ('metal','glitch') else 3 if (three or mode=='window' and self.current().get('middle_image')) else 2
         placement_labels=['Artwork','Depth map'] if mode in ('depth','ghost','cd') else ['Animation'] if mode=='gif' else ['Graphic'] if mode=='metal' else ['Front frame','Background','Object layer'][:count] if mode=='window' else ['Foreground','Background','Middle layer'] if three else ['First image','Second image']
         if [self.placement_choice.itemText(i) for i in range(self.placement_choice.count())]!=placement_labels:
             self.placement_choice.blockSignals(True)
@@ -1155,7 +1205,7 @@ class Creator(QMainWindow):
         self.bands.setEnabled(mode in ('depth','layers') and self.lenticular.isChecked() and not self.busy)
         self.bands.setVisible(mode in ('depth','layers') and self.lenticular.isChecked())
         for w in (self.strength,self.convergence,self.invert):
-            w.setVisible(mode not in ('classic','metal','ink','window','liquid','neon') and not (three and w==self.convergence))
+            w.setVisible(mode not in ('classic','metal','ink','window','liquid','neon','eink','glitch') and not (three and w==self.convergence))
         for control in (self.ink_background,self.ink_revealed,self.ink_showthrough,self.ink_strength,self.ink_contrast,self.ink_invert):
             control.setVisible(mode=='ink');control.setEnabled(not self.busy)
         self.surface_strength.setEnabled(self.surface_shimmer.isChecked() and not self.busy)
@@ -1167,6 +1217,8 @@ class Creator(QMainWindow):
         if cd_on:
             self.strength.hide();self.convergence.hide()
         self.surface_box.setVisible(not cd_on)
+        self.lens_ridges.setVisible(mode=='classic');self.lens_ridge_strength.setVisible(mode=='classic')
+        self.lens_ridge_strength.setEnabled(self.lens_ridges.isChecked() and not self.busy)
         for control in (self.cd_finish,self.cd_layout,self.cd_colours,self.cd_optics,self.cd_clear,self.cd_backing,*self.cd_controls.values()):control.setEnabled(cd_on and not self.busy)
         modern_cd=cd_on and list(cd_finish.FINISHES)[self.cd_finish.currentIndex()]=='cd_mirror'
         for control in (self.cd_optics,self.cd_backing,self.cd_controls['faint_visibility']):control.setEnabled(modern_cd and not self.busy)
@@ -1202,6 +1254,18 @@ class Creator(QMainWindow):
         self.placement_choice.setEnabled(mode not in ('gif','neon'))
         if mode in ('depth','ghost','cd','gif','neon'):
             self.placement_choice.setCurrentIndex(0)
+
+    def choose_normal_map(self,checked=False,clear=False):
+        path='' if clear else QFileDialog.getOpenFileName(self,'Choose tangent-space normal map',filter='Normal maps (*.png *.webp *.tif *.tiff *.bmp)')[0]
+        if clear or path:
+            self.normal_style.setCurrentIndex(0 if clear else 1)
+            self.normal_path=path;self.normal_name.setText(Path(path).name if path else 'No normal map');self.changed()
+
+    def normal_mode_changed(self,*args):
+        custom=self.normal_style.currentIndex()==1
+        self.normal_link.setEnabled(custom);self.normal_flip.setEnabled(custom)
+        for key,control in self.normal_controls.items():
+            control.setEnabled(self.normal_style.currentIndex()!=2 if key=='strength' else custom)
 
     def choose_ghost_mask(self,kind):
         path,_=QFileDialog.getOpenFileName(self,'Choose '+kind+' finish mask',filter='Mask images (*.png *.webp *.tif *.tiff *.bmp)')
@@ -1357,7 +1421,7 @@ class Creator(QMainWindow):
             return
         self.remember()
         d = copy.deepcopy(self.current())
-        if not d['images'][0] or (d['mode'] not in ('gif','metal') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
+        if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
             self.status.setText('Choose the images for this effect.')
             self.make_thumbnail()
             return
@@ -1391,7 +1455,7 @@ class Creator(QMainWindow):
                     sources = cached_sources
                     if sources is None:
                         sources = []
-                        paths=(d['images'][:1] if d['mode']=='metal' or (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') else d['images'])+([d['middle_image']] if d['mode'] in ('layers','window') and d.get('middle_image') else [])
+                        paths=(d['images'][:1] if d['mode'] in ('metal','glitch') or (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') else d['images'])+([d['middle_image']] if d['mode'] in ('layers','window') and d.get('middle_image') else [])
                         for path in paths:
                             with Image.open(path) as source:
                                 source = ImageOps.exif_transpose(source).convert('RGBA')
@@ -1405,7 +1469,11 @@ class Creator(QMainWindow):
                         if revision!=self.revision:
                             raise InterruptedError()
                     preview_mode=d['mode']
-                    if d['mode']=='neon':
+                    if d['mode'] in ('eink','glitch'):
+                        import digital_finish
+                        atlas=digital_finish.pack(d['mode'],images[0],images[1] if len(images)>1 else None,d.get(d['mode']))
+                        preview_mode=d['mode'];thumbs=images
+                    elif d['mode']=='neon':
                         import advanced_atlas
                         atlas=advanced_atlas.neon_pack(images[0],images[1] if len(images)>1 else None,d.get('neon'))
                         thumbs=[images[0],images[0]]
@@ -1428,7 +1496,12 @@ class Creator(QMainWindow):
                         import smooth_effect
                         atlas=smooth_effect.pack(*images,strength,convergence,d['mode']=='ghost',d.get('ghost'),d['fit'],d['placement'][0])
                         cd_on=cd_finish.enabled(d)
-                        if cd_on:atlas=cd_finish.pack(images[0],images[1],d.get('cd'))
+                        if cd_on:
+                            import copy
+                            cd_cfg=copy.deepcopy(d.get('cd',{}))
+                            if cd_cfg.get('normal',{}).get('linked',True) and cd_cfg.get('normal'):
+                                cd_cfg['normal']['placement']=d['placement'][0]
+                            atlas=cd_finish.pack(images[0],images[1],cd_cfg)
                         thumbs=images
                         preview_mode='cd' if cd_on else 'ghost' if d['mode']=='ghost' else 'smooth'
                         if d['mode'] in ('ghost','cd'):

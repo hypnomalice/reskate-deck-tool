@@ -72,6 +72,9 @@ class AtlasPreview:
         if view_profile is not None and self.mode not in ('metal','ink','window','liquid','neon','cd'):
             bias,curve,*scale=view_profile
             angle=np.clip(angle*(scale[0] if scale else 1)+bias+curve*(u-.5),-1,1)
+        if self.mode in ('eink','glitch'):
+            import digital_finish
+            return digital_finish.preview(self,self.mode,angle,u,v)
         if self.mode=='cd':
             import cd_finish
             return display(cd_finish.render(self,angle,u,v))
