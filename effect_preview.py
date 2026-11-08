@@ -69,7 +69,7 @@ class AtlasPreview:
         u = left + u * (right - left)
         v = top + v * (bottom - top)
         angle = float(np.clip(angle, -1, 1))
-        if view_profile is not None and self.mode not in ('metal','ink','window','liquid','neon','cd'):
+        if view_profile is not None and self.mode not in ('metal','ink','window','liquid','neon','cd','eink','glitch'):
             bias,curve,*scale=view_profile
             angle=np.clip(angle*(scale[0] if scale else 1)+bias+curve*(u-.5),-1,1)
         if self.mode in ('eink','glitch'):

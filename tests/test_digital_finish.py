@@ -28,3 +28,21 @@ class DigitalFinishTests(unittest.TestCase):
         for mode in ('eink','glitch'):
             p=AtlasPreview(digital_finish.pack(mode,self.a,self.b),mode)
             for angle in (-1,0,1):self.assertEqual(p.render(angle,(64,256)).size,(64,256))
+
+    def test_glitch_animates_without_changing_view_angle(self):
+        p=AtlasPreview(digital_finish.pack('glitch',self.b,self.a),'glitch')
+        p.clock_seconds=0
+        a=np.asarray(p.render(0,(64,256)))
+        p.clock_seconds=.4
+        b=np.asarray(p.render(0,(64,256)))
+        self.assertGreater(np.abs(a.astype(float)-b).mean(),1)
+
+    def test_preview_worker_does_not_shadow_copy_module(self):
+        import ast
+        from pathlib import Path
+        tree=ast.parse((Path(__file__).parents[1]/'qt_ui.py').read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef)):
+                for child in ast.walk(node):
+                    if isinstance(child,ast.Import):
+                        self.assertNotIn('copy',[alias.name for alias in child.names])

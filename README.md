@@ -1,6 +1,10 @@
-# ReSkate Deck Tool 1.6.0
+# ReSkate Deck Tool 1.6.1
 
 Create E-ink, Glitch, Animated / GIF, Lenticular (2–8 pictures), Depth Map, Parallax (2–3 images), Ghost Rare, CD Hologram, Metallic Flakes, Ink Flow, Impossible Window, Liquid Bottle and Neon decks.
+
+## 1.6.1 - preview repair
+
+Fixes artwork preview loading and adds clock-driven glitch preview animation. Clear Case authoring is not included in this release.
 
 ## 1.6.0 - e-ink and lenticular plastic
 

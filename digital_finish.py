@@ -39,7 +39,7 @@ def preview(p,mode,angle,u,v):
   a=p.sample(u,64/4096+v*1984/4096);b=p.sample(u,.5+v*.5)
   x=b+(a-b)*wipe;flash=smooth(.12,.28,t)*(1-smooth(.30,.46,t));x=x+(1-2*x)*flash
   return display(x)
- c=p.sample(.875,31/4096);row=np.floor(v*(20+c[1]*220));noise=np.mod(np.sin(row*78.233+float(angle)*120)*43758.5453,1)
+ c=p.sample(.875,31/4096);row=np.floor(v*(20+c[1]*220));tick=np.floor(getattr(p,'clock_seconds',0)*max(1,float(c[2])*30));noise=np.mod(np.sin(row*78.233+tick*37.719)*43758.5453,1)
  shift=np.where(noise>.65,(noise-.5)*.08*c[0],0)
  x=p.sample(np.clip(u+shift,0,1),64/4096+v*1984/4096)
  rgb=np.stack((noise>.7,(noise>.45)&(noise<.7),noise<.3),axis=-1)

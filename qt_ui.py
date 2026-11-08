@@ -328,7 +328,7 @@ class Creator(QMainWindow):
 
     def showEvent(self,event):
         super().showEvent(event)
-        if hasattr(self,'animation_timer') and self.clip:self.animation_timer.start()
+        if hasattr(self,'animation_timer') and (self.clip or self.current()['mode']=='glitch'):self.animation_timer.start()
 
     def save_project(self):
         if self.busy:
@@ -1497,7 +1497,6 @@ class Creator(QMainWindow):
                         atlas=smooth_effect.pack(*images,strength,convergence,d['mode']=='ghost',d.get('ghost'),d['fit'],d['placement'][0])
                         cd_on=cd_finish.enabled(d)
                         if cd_on:
-                            import copy
                             cd_cfg=copy.deepcopy(d.get('cd',{}))
                             if cd_cfg.get('normal',{}).get('linked',True) and cd_cfg.get('normal'):
                                 cd_cfg['normal']['placement']=d['placement'][0]
@@ -1588,7 +1587,7 @@ class Creator(QMainWindow):
                         if not keep_clock:
                             self.started = time.monotonic()
                         self.clip_path = self.current()['images'][0] if self.clip else None
-                        if self.clip and self.isVisible():self.animation_timer.start()
+                        if (self.clip or self.current()['mode']=='glitch') and self.isVisible():self.animation_timer.start()
                         else:self.animation_timer.stop()
                         self.status.setText('Ready · preview before game lighting')
                         self.last_key = None
@@ -1691,13 +1690,14 @@ class Creator(QMainWindow):
         mode = self.current()['mode']
         angle,bands = self.angle.value()/100,self.bands.value()/100
         gif_index = self.clip.frame_index(((time.monotonic()-self.started)*1000)%self.clip.duration_ms) if self.clip else None
+        glitch_tick=int((time.monotonic()-self.started)*24) if mode=='glitch' else None
         quality=self.preview_quality.currentIndex() if hasattr(self,'preview_quality') else 1
         width=(120,180,256)[quality]
         if self.angle.slider.isSliderDown() or self.orbit_dragging:width=min(width,96)
         elif self.large:width=min(320,width*2)
         size=(width,width*4)
         surface_state = (self.view_mode.currentText(),self.studio_light.isChecked(),self.board.yaw,self.board.pitch)
-        key = (self.revision,angle,bands,self.detail_toggle.isChecked(),gif_index,size,self.live_placement,surface_state,active_renderer is self.export_renderer and active_renderer is not None)
+        key = (self.revision,angle,bands,self.detail_toggle.isChecked(),gif_index,size,self.live_placement,surface_state,active_renderer is self.export_renderer and active_renderer is not None,glitch_tick)
         self.frame_request_key = key
         if self.last_key==key:
             return
@@ -1712,6 +1712,9 @@ class Creator(QMainWindow):
                     self.frame_renderer.set_lens_strength(bands)
                 self.frame_renderer_key = renderer_key
             snapshot = self.frame_renderer
+            if glitch_tick is not None:
+                snapshot=copy.copy(snapshot)
+                snapshot.clock_seconds=glitch_tick/24
             self.frame_worker = True
             def draw():
                 try:
