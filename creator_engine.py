@@ -187,7 +187,8 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
                 image.save(target)
                 project['images'][index] = str(target)
             project['fit'] = 'Stretch'
-        return _export_pack(projects,dest,progress,title=title,author=author,shared_runtime=shared_runtime,_texture_only=_texture_only)
+        result = _export_pack(projects,dest,progress,title=title,author=author,shared_runtime=shared_runtime,_texture_only=_texture_only)
+        return result
 
 
 def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular Deck Pack",author="",shared_runtime=False,_texture_only=False):
@@ -202,7 +203,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     import surface_finish
     base_encode=globals()['encode']
     def encode(image,progress=lambda message:None,**options):
-        image=image if cd_finish.enabled(project) else surface_finish.mark(image,project.get('surface_finish'))
+        image=image if cd_finish.enabled(project) else surface_finish.mark(image,project.get('surface_finish'),mode=project.get('mode'))
         if project.get('mode','classic')=='classic' and project.get('lenticular',True) and not project.get('extra_images') and not cd_finish.enabled(project) and project.get('lenticular_ridges',True):
             import normal_layer
             image=normal_layer.embed_lenticular(image,float(project.get('ridge_strength',.55)))
@@ -331,7 +332,8 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     from fbmod_compat import compatible
     progress('Applying sticker compatibility…')
     result, _ = compatible(result)
-    rim_names=[p['name'] for p in projects if p.get('mode')=='glitch']
+    case_names=[p['name'] for p in projects if p.get('mode')=='case']
+    rim_names=[p['name'] for p in projects if p.get('mode')=='glitch']+case_names
 
     dest.parent.mkdir(parents=True,exist_ok=True)
     if shared_runtime:
@@ -347,12 +349,12 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         else:write_content_export(result,dest,overwrite=True)
         if rim_names:
             import eink_mesh
-            dest.write_bytes(eink_mesh.attach(dest.read_bytes(),rim_names,[p['name'] for p in projects if p.get('mode')=='glitch'],shared_runtime=True))
+            dest.write_bytes(eink_mesh.attach(dest.read_bytes(),rim_names,[p['name'] for p in projects if p.get('mode')=='glitch'],shared_runtime=True,case_names=case_names))
         progress('Export complete.');return dest
     if cd_atlases:result=cd_finish.lossless_archive(result,cd_atlases)
     if rim_names:
         import eink_mesh
-        result=eink_mesh.attach(result,rim_names,[p['name'] for p in projects if p.get('mode')=='glitch'])
+        result=eink_mesh.attach(result,rim_names,[p['name'] for p in projects if p.get('mode')=='glitch'],case_names=case_names)
     temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
     progress('Export complete.');return dest
 

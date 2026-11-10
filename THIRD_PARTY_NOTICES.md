@@ -32,3 +32,5 @@ third-party dependencies, the supplied character icon, or game-derived template 
 
 No example decks or personal artwork are included. Source projects and generated images
 belong to their respective authors.
+
+- `assets/eink-rim-mesh.fbmod`, `assets/glitch-opaque-mesh.fbmod`, and `assets/case-shell-mesh.fbmod` contain game-derived board geometry/material templates with SDEC routing modifications. They retain the original game assets' rights; the MIT licence does not relicense them.

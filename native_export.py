@@ -65,6 +65,14 @@ def validate_inputs(game_root, compiler):
 def export_zip(projects, destination, progress=lambda message: None, *, title, author='', game_root, compiler):
     import creator_engine
     game, cli = validate_inputs(game_root, compiler)
+    core_loader = any(p.get('mode') in ('glitch', 'case') for p in projects)
+    # Older CLIs treat unknown options as additional FBMOD filenames. Keep the
+    # loader contract intact rather than retrying without the required option.
+    if core_loader and b'--board-loader-from-core' not in cli.read_bytes():
+        raise ValueError(
+            'This Studio compiler does not support shared-core glitch/case exports. '
+            'Choose an updated shader-capable reskate_cli.exe using Change export setup. '
+            'Your previous export is unchanged.\n\nCompiler: '+str(cli))
     target = Path(destination).resolve()
     if target.suffix.lower() != '.zip':
         raise ValueError('Choose a .zip file for a ready-to-install mod.')
@@ -75,15 +83,23 @@ def export_zip(projects, destination, progress=lambda message: None, *, title, a
         root = Path(temporary)
         content = root/'content.fbmod'
         creator_engine.export_pack(projects, content, progress, title=title, author=author, shared_runtime=True)
+        try:
+            with content.open('rb') as stream:
+                if not stream.read(1):
+                    raise OSError('The staged FBMOD is empty.')
+        except OSError as error:
+            raise ValueError(f'Cannot read staged export: {content}\n{error}') from error
         progress('Compiling installable mod files; Studio stays closed…')
         stage = root/'compiled'
         command=[str(cli), 'compile-mod', str(game), str(stage), str(content)]
-        if any(p.get('mode') in ('eink','glitch') for p in projects):command.append('--board-loader-from-core')
+        if core_loader:command.append('--board-loader-from-core')
         result = subprocess.run(command,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace',
             timeout=900, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if result.returncode:
-            raise ValueError('Native mod compilation failed. Your previous export is unchanged.\n\n'+result.stdout[-6000:])
+            raise ValueError('Native mod compilation failed. Your previous export is unchanged.\n\n'
+                +'Command: '+subprocess.list2cmdline(command)+'\nStaged FBMOD: '
+                +str(content.stat().st_size)+' bytes (readable before compilation)\n\n'+result.stdout[-6000:])
         patch = stage/'Patch'
         if patch.is_symlink() or not (patch/'layout.toc').is_file():
             raise ValueError('The compiler did not produce a native mod layout. Your previous export is unchanged.')

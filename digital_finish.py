@@ -29,6 +29,7 @@ def pack(mode,a,b=None,cfg=None):
  def strip(y,rgb):draw.rectangle((384,y,511,y+3),fill=tuple(layer_atlas.encode_linear(x) for x in rgb)+(255,))
  strip(24,(.21,.43,.65) if mode=='eink' else (.71,.13,.39))
  strip(16 if mode=='eink' else 28,((c['span']-.2)/1.8,c['ghosting']/.3,0) if mode=='eink' else (c['strength'],c['density']/240,c['speed']/30))
+ if mode=='eink':strip(20,(.18,.54,.82)) # Keep the row-32 signature's bilinear footprint intact.
  if mode=='glitch':
   strip(32,(list(PRESETS).index(c['preset'])/2,('rgb','one','two').index(c['colour_mode'])/2,0))
   for y,key in ((40,'colour1'),(44,'colour2')):
@@ -39,14 +40,19 @@ def pack(mode,a,b=None,cfg=None):
 def preview(p,mode,angle,u,v):
  from effect_preview import AtlasPreview,display
  if mode=='eink':
-  span=.2+float(p.sample(.875,19/4096)[0])*1.8
-  t=np.clip((float(angle)+span*.5)/span,0,1)
-  def smooth(a,b,x):
-   t=np.clip((x-a)/(b-a),0,1);return t*t*(3-2*t)
-  wipe=smooth(-.12,.12,smooth(.25,.80,t)-v)[...,None]
   a=p.sample(u,64/4096+v*1984/4096);b=p.sample(u,.5+v*.5)
-  x=b+(a-b)*wipe;flash=smooth(.12,.28,t)*(1-smooth(.30,.46,t));x=x+(1-2*x)*flash
-  return display(x)
+  cfg=p.sample(.875,19/4096);span=.2+float(cfg[0])*1.8
+  phase=np.clip((angle+span*.5)/span,0,1)
+  def pigment(sample):return np.floor(np.clip(sample@np.array([.2126,.7152,.0722]),0,1)*3+.5)/3
+  old,new=pigment(b),pigment(a)
+  def smooth(a,b):
+   t=np.clip((phase-a)/(b-a),0,1);return t*t*(3-2*t)
+  # Keep the reference flash and pigment treatment. Switch only at full flash.
+  ink=np.where(phase>=.29,new,old)
+  flash=smooth(.12,.28)*(1-smooth(.30,.46))
+  ink=ink+(1-2*ink)*flash
+  ink=ink+(old-ink)*(float(cfg[1])*.3*smooth(.65,1))
+  return display(np.array([.012,.014,.013])+ink[...,None]*(np.array([.76,.77,.74])-np.array([.012,.014,.013])))
  c=p.sample(.875,31/4096);row=np.floor(v*(20+c[1]*220));tick=np.floor(getattr(p,'clock_seconds',0)*max(1,float(c[2])*30));noise=np.mod(np.sin(row*78.233+tick*37.719)*43758.5453,1)
  shift=np.where(noise>.65,(noise-.5)*.08*c[0],0)
  x=p.sample(np.clip(u+shift,0,1),64/4096+v*1984/4096)

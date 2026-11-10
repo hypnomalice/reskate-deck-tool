@@ -19,7 +19,7 @@ def smooth_depth(project):
     mode=project.get('mode')
     return settings(project.get('surface_finish'))['smooth_depth'] and (mode=='ghost' or mode in ('depth','layers') and not project.get('lenticular',True))
 
-def mark(atlas,value):
+def mark(atlas,value,*,mode=None):
     cfg=settings(value)
     if not cfg['shimmer'] and not cfg['holographic']:return atlas
     from layer_atlas import encode_linear
@@ -28,11 +28,15 @@ def mark(atlas,value):
     if out.mode=='RGBA':colour+=(255,)
     # A reserved part of the hidden recognition strip; all existing control rows
     # (48/4096..64/4096) and animation timing tables are untouched.
-    if cfg['shimmer']:ImageDraw.Draw(out).rectangle((w*3//4,h*8//4096,w-1,h*24//4096-1),fill=colour)
+    digital=mode in ('case','eink')
+    if cfg['shimmer']:
+        first,last=(36,40) if digital else (8,24)
+        ImageDraw.Draw(out).rectangle((w*3//4,h*first//4096,w-1,h*last//4096-1),fill=colour)
     if cfg['holographic']:
         colour=tuple(encode_linear(v) for v in (.83,.17,cfg['holo_strength']))
         if out.mode=='RGBA':colour+=(255,)
-        ImageDraw.Draw(out).rectangle((w*3//4,h*36//4096,w-1,h*40//4096-1),fill=colour)
+        first,last=(44,48) if digital else (36,40)
+        ImageDraw.Draw(out).rectangle((w*3//4,h*first//4096,w-1,h*last//4096-1),fill=colour)
     return out
 
 def preview(image,angle,u,v,marker,holo=None):

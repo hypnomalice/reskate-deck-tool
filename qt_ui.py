@@ -388,6 +388,8 @@ class Creator(QMainWindow):
                 deck['thumbnail'] = str((Path(path).parent/deck['thumbnail']).resolve())
             for cfg in deck.get('ghost',{}).values():
                 if cfg.get('mask'):cfg['mask']=str((Path(path).parent/cfg['mask']).resolve())
+            for key in ('screw_mask','detail_mask'):
+                if deck.get('case',{}).get(key):deck['case'][key]=str((Path(path).parent/deck['case'][key]).resolve())
             normalized.append(deck)
         self.decks = normalized
         self.selected = max(0,min(data.get('selected',0),len(decks)-1))
@@ -902,17 +904,34 @@ class Creator(QMainWindow):
         case_layout=QVBoxLayout(self.case_box)
         self.case_style=QComboBox();self.case_style.addItems(['Frosted / hazy','Clear / glossy'])
         self.case_style.currentIndexChanged.connect(self.changed);case_layout.addWidget(self.case_style)
+        self.case_grip=QCheckBox('Grip tape');self.case_grip.setChecked(False)
+        self.case_grip.setToolTip('Keep normal grip tape on the top. Off shows the simulated shell on both sides.')
+        self.case_grip.toggled.connect(self.changed);case_layout.addWidget(self.case_grip)
         self.case_tint=QPushButton('Shell tint');self.case_tint.clicked.connect(self.choose_case_tint);case_layout.addWidget(self.case_tint)
         self.case_tint_strength=Adjustment('Tint strength',35,0,100)
         self.case_haze=Adjustment('Internal blur',42,0,100)
         self.case_depth=Adjustment('Internal movement',30,0,100)
         for control in (self.case_tint_strength,self.case_haze,self.case_depth):
             control.changed.connect(self.changed);case_layout.addWidget(control)
-        case_layout.addWidget(QLabel('Upload internal artwork. Plastic is simulated; the world is not visible through it.'))
+        self.case_masks={}
+        for kind,label in (('screw_mask','Screw placement'),('detail_mask','Moulded details')):
+            row=QHBoxLayout();choose=QPushButton(label+' mask...');clear=QPushButton('Reset')
+            choose.clicked.connect(lambda checked=False,k=kind:self.choose_case_mask(k))
+            clear.clicked.connect(lambda checked=False,k=kind:self.clear_case_mask(k))
+            row.addWidget(choose);row.addWidget(clear);case_layout.addLayout(row)
+            name=QLabel();name.setWordWrap(True);case_layout.addWidget(name);self.case_masks[kind]=name
+        hint=QLabel('Use full artwork-canvas masks. Screws: up to 16 separate white circles on black. Details: white adds raised plastic, black leaves it clear. A black mask removes the defaults. Actual trucks stay fixed.')
+        hint.setWordWrap(True);case_layout.addWidget(hint)
+        self.case_help=QLabel('Upload internal artwork. Plastic is simulated; the world is not visible through it.')
+        self.case_help.setWordWrap(True)
+        self.case_help.setMinimumWidth(0)
+        case_layout.addWidget(self.case_help)
         effects.addWidget(self.case_box)
         self.digital_box=QGroupBox('Display behaviour')
         digital_layout=QVBoxLayout(self.digital_box)
-        self.eink_span=Adjustment('Refresh span - degrees',90,20,160,tip='Wider spans refresh more slowly during the same board rotation. The refresh reacts to tilt; it is not an automatic timer.')
+        self.eink_span=Adjustment('Refresh tilt range',155,20,200,tip='Wider ranges spread the original flash across more tilt. The page switches at full flash in either direction.')
+        self.eink_span.spin.setSuffix('%')
+        self.eink_span.spin.setSingleStep(5)
         self.eink_ghosting=Adjustment('Previous-page residue',5.5,0,30,tip='Faint pigment left by the previous page after refreshing.')
         self.glitch_style=QComboBox();self.glitch_style.addItems(['Scanline tearing','RGB breakup','Signal dropouts'])
         self.glitch_strength=Adjustment('Glitch intensity',70,0,100,tip='Strength of tearing, colour separation and corrupted lines.')
@@ -1089,8 +1108,9 @@ class Creator(QMainWindow):
         for kind,(method,mask_button,mask_name,colour_button,tolerance) in self.ghost_area_controls.items():
             cfg=d.setdefault('ghost',{}).setdefault(kind,{})
             cfg.update(selection=('all','mask','colour')[method.currentIndex()],tolerance=tolerance.value()/100)
-        d['case']=dict(finish=('frosted','glossy')[self.case_style.currentIndex()],tint=d.get('case',{}).get('tint','#d9e6e7'),tint_strength=self.case_tint_strength.value()/100,haze=self.case_haze.value()/100,depth=self.case_depth.value()*.0006)
-        d['eink']=dict(span=self.eink_span.value()/90,ghosting=self.eink_ghosting.value()/100)
+        case_masks={k:d.get('case',{}).get(k) for k in ('screw_mask','detail_mask')}
+        d['case']=dict(**case_masks,finish=('frosted','glossy')[self.case_style.currentIndex()],tint=d.get('case',{}).get('tint','#d9e6e7'),tint_strength=self.case_tint_strength.value()/100,haze=self.case_haze.value()/100,depth=self.case_depth.value()*.0006,grip_tape=self.case_grip.isChecked())
+        d['eink']=dict(span=self.eink_span.value()/100,ghosting=self.eink_ghosting.value()/100)
         d['glitch']=dict(preset=('tearing','rgb','dropout')[self.glitch_style.currentIndex()],strength=self.glitch_strength.value()/100,density=self.glitch_density.value(),speed=self.glitch_speed.value(),colour_mode=('rgb','one','two')[self.glitch_colours.currentIndex()],colour1=d.get('glitch',{}).get('colour1','#ff1744'),colour2=d.get('glitch',{}).get('colour2','#00e5ff'))
         d['ink']=dict(background_colour=d.get('ink',{}).get('background_colour','#242c42'),revealed_colour=d.get('ink',{}).get('revealed_colour','#88c0d3'),showthrough=self.ink_showthrough.value()/100,strength=self.ink_strength.value()/100,contrast=self.ink_contrast.value()/100,invert=self.ink_invert.isChecked())
         d['layer_depths']=[control.value()/100 for control in self.layer_depth_controls]
@@ -1132,10 +1152,12 @@ class Creator(QMainWindow):
         import digital_finish
         import case_finish
         cc=case_finish.settings(d.get('case'));self.case_style.setCurrentIndex(0 if cc['finish']=='frosted' else 1)
+        self.case_grip.setChecked(cc['grip_tape'])
+        for key,label in self.case_masks.items():label.setText(Path(cc[key]).name if cc.get(key) else 'Default arrangement')
         self.case_tint_strength.set_value(cc['tint_strength']*100);self.case_haze.set_value(cc['haze']*100);self.case_depth.set_value(cc['depth']/.0006)
         self.case_tint.setText('Shell tint '+cc['tint'])
         ec=digital_finish.settings('eink',d.get('eink'));gc=digital_finish.settings('glitch',d.get('glitch'))
-        self.eink_span.set_value(ec['span']*90);self.eink_ghosting.set_value(ec['ghosting']*100)
+        self.eink_span.set_value(ec['span']*100);self.eink_ghosting.set_value(ec['ghosting']*100)
         self.glitch_style.setCurrentIndex(list(digital_finish.PRESETS).index(gc['preset']))
         self.glitch_colours.setCurrentIndex(('rgb','one','two').index(gc['colour_mode']))
         self.glitch_colour1.setText('First colour '+gc['colour1']);self.glitch_colour2.setText('Second colour '+gc['colour2'])
@@ -1321,6 +1343,23 @@ class Creator(QMainWindow):
         cfg=self.current().setdefault('ink',{})
         colour=QColorDialog.getColor(QColor(cfg.get(key,defaults[key])),self,'Choose '+('background' if key=='background_colour' else 'revealed')+' ink colour')
         if colour.isValid():cfg[key]=colour.name();self.changed()
+
+    def choose_case_mask(self,key):
+        path,_=QFileDialog.getOpenFileName(self,'Choose case '+key.replace('_',' '),filter='Mask images (*.png *.webp *.tif *.tiff *.bmp)')
+        if path:
+            try:
+                import case_finish
+                if key=='screw_mask':case_finish.screw_positions(path)
+                else:
+                    with Image.open(path) as im:im.verify()
+            except Exception as exc:
+                QMessageBox.warning(self,'Cannot use mask',str(exc));return
+            self.current().setdefault('case',{})[key]=path
+            self.case_masks[key].setText(Path(path).name);self.changed()
+
+    def clear_case_mask(self,key):
+        self.current().setdefault('case',{})[key]=None
+        self.case_masks[key].setText('Default arrangement');self.changed()
 
     def choose_case_tint(self):
         cfg=self.current().setdefault('case',{})
@@ -1692,8 +1731,7 @@ class Creator(QMainWindow):
                     instruction = ('Deck pack installed. Enable it in the ReSkate launcher. Previous tool exports are backed up in .deck-tool-backups beside the mod folder.'
                         if Path(result).is_dir() else 'Install this ZIP through the ReSkate launcher, or extract its mod folder into Mods. No manual Studio import is needed.'
                         if Path(result).suffix.lower()=='.zip' else 'Import this FBMOD in Studio when you want to build or edit it.')
-                    runtime_note=('Requires the SDEC 2.1.0 runtime. Install the companion CD renderer ZIP once, and keep it enabled alongside your deck.'
-                        if any(cd_finish.enabled(d) or surface_finish.settings(d.get('surface_finish'))['shimmer'] for d in self.decks) else 'Requires SDEC, installed separately from Thunderstore. The tool does not download or bundle it.\n\nhttps://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/')
+                    runtime_note='Keep one matching SDEC core enabled at the top of the mod list.'
                     QMessageBox.information(self,'Export complete',instruction+'\n\n'+runtime_note+'\n\n'+result)
                 else:
                     QMessageBox.critical(self,'Operation failed',result)

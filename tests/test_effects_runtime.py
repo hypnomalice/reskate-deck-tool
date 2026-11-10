@@ -14,6 +14,27 @@ def resources(data):
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_content_retains_the_material_routes_its_recipes_require(self):
+        import struct
+        from fbmod_compat import unpack
+        content, _, _ = split_pack(self.original)
+        archive = Archive(content)
+        recipe_keys = {struct.unpack_from('<Q',unpack(archive.blobs[i]),16)[0]
+                       for i in range(len(archive.blobs))
+                       if archive.key(i)[0]==2 and '/shaders/lenticular_' in archive.key(i)[1]}
+        db = next(i for i in range(len(archive.blobs)) if archive.key(i)[1].endswith('_shaderstate_db'))
+        raw = unpack(archive.blobs[db])
+        descriptor = archive.descriptors[db]
+        tail = deck_archive.descriptor_parts(descriptor)[2]
+        size,rel = struct.unpack_from('<II',descriptor,tail+16)
+        at = size+rel
+        count = struct.unpack_from('<I',raw,at)[0];at+=4
+        routed = set()
+        for _ in range(count):
+            key,n = struct.unpack_from('<QI',raw,at);routed.add(key);at+=12+4*n
+        self.assertTrue(recipe_keys)
+        self.assertLessEqual(recipe_keys,routed)
+
     @classmethod
     def setUpClass(cls):
         from fbmod_compat import pack
@@ -29,11 +50,11 @@ class RuntimeTests(unittest.TestCase):
         normalized, _ = compatible(self.original)
         left, right = resources(content), resources(runtime)
         overlap = left.keys() & right.keys()
-        self.assertTrue(all('_bundlereftable' in name for _, name in overlap))
+        self.assertTrue(all('_bundlereftable' in name or '_shaderstate_' in name for _, name in overlap))
         self.assertEqual(left, {key: value for key, value in resources(normalized).items()
-                                if key not in shared_keys()})
+                                if key not in shared_keys() or '_shaderstate_' in key[1]})
         self.assertEqual(right, resources(build_runtime()))
-        self.assertFalse(left.keys() & shared_keys())
+        self.assertTrue(all('_shaderstate_' in name for _,name in left.keys() & shared_keys()))
         self.assertTrue(all(key in shared_keys() or '_bundlereftable' in key[1] for key in right))
         self.assertEqual(contract['abi'], ABI)
         self.assertFalse(contract['third_party_compatibility_verified'])
@@ -50,7 +71,7 @@ class RuntimeTests(unittest.TestCase):
         archive = Archive(build_runtime())
         keys = {archive.key(i) for i in range(len(archive.blobs))}
         self.assertFalse(keys & COMPOSITOR)
-        self.assertEqual(len(keys), 22)
+        self.assertEqual(keys, {(record['kind'], record['name']) for record, _ in _runtime_updates()})
         for record, payload in _runtime_updates():
             i = archive.find(record['kind'], record['name'])
             self.assertIsNotNone(i)
@@ -88,7 +109,7 @@ class RuntimeTests(unittest.TestCase):
             contract=write_content_export(self.original,target)
             self.assertEqual(list(root.iterdir()),[target])
             content=resources(target.read_bytes())
-            self.assertFalse(content.keys() & shared_keys())
+            self.assertTrue(all('_shaderstate_' in name for _,name in content.keys() & shared_keys()))
             self.assertIn('neon-mask',contract['runtime_features'])
             before=target.read_bytes()
             with self.assertRaises(FileExistsError):write_content_export(self.original,target)

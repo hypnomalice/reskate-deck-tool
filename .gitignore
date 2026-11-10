@@ -4,6 +4,9 @@ __pycache__/
 build/
 dist/
 *.fbmod
+!assets/eink-rim-mesh.fbmod
+!assets/glitch-opaque-mesh.fbmod
+!assets/case-shell-mesh.fbmod
 *.partial
 *.download
 *.lenticular.json

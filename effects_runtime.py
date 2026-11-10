@@ -92,7 +92,12 @@ def split_pack(data):
     archive = Archive(normalized)
     shared = shared_keys()
     runtime_indices = [i for i in range(len(archive.blobs)) if archive.key(i) in shared]
-    content_indices = [i for i in range(len(archive.blobs)) if archive.key(i) not in shared]
+    # These tables also contain the UUID-derived material keys of this pack.
+    # Keep their additive mappings with the content; the core cannot know keys
+    # for decks that have not yet been authored. Native merging unions the rows.
+    content_indices = [i for i in range(len(archive.blobs)) if archive.key(i) not in shared
+                       or archive.key(i)[1].endswith(('_shaderstate_db',
+                           '_shaderstate_streamabletexturesetlookuptable'))]
     # All common shader, empty-texture and Lua resources must be supplied once.
     legacy = json.loads((deck_archive.ROOT.parent / 'assets/sticker-compat/manifest.json').read_text())
     mandatory = {(r['kind'], r['name']) for r in legacy}

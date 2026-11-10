@@ -22,7 +22,7 @@ class AtlasPreview:
         self.height, self.width = self.pixels.shape[:2]
         self.settings = self.sample(.125, 56 / 4096)
         self.motion = self.sample(.375, 56 / 4096)
-        self.surface_marker=self.sample(.875,16/4096)
+        self.surface_marker=self.sample(.875,(39 if mode in ('case','eink') else 16)/4096)
         self.cached_size, self.cached_samples = None, None
 
     def set_lens_strength(self, value):

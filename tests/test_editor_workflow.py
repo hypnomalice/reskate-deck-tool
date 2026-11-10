@@ -23,6 +23,21 @@ class EditorWorkflowTests(unittest.TestCase):
     def test_static_preview_is_not_on_an_animation_timer(self):
         self.assertFalse(self.w.animation_timer.isActive())
         self.assertEqual(self.w.preview_quality.currentText(),'Light preview')
+
+    def test_case_settings_fit_default_inspector(self):
+        w=self.w;w.decks[0].update(mode='case',effect_chosen=True);w.apply_deck()
+        w.inspector_tabs.setCurrentIndex(1);self.app.processEvents()
+        self.assertTrue(w.case_help.wordWrap())
+        self.assertEqual(w.inspectors.horizontalScrollBar().maximum(),0)
+        self.assertLessEqual(w.case_box.width(),w.inspectors.viewport().width())
+
+    def test_eink_tilt_range_roundtrips(self):
+        w=self.w;w.decks[0].update(mode='eink',effect_chosen=True);w.apply_deck()
+        w.eink_span.spin.setValue(180)
+        self.assertAlmostEqual(w.workspace()['decks'][0]['eink']['span'],1.8)
+        self.assertEqual(w.eink_span.spin.suffix(),'%')
+        w.apply_deck()
+        self.assertEqual(w.eink_span.value(),180)
     def test_cd_duplicate_controls_are_hidden(self):
         self.w.inspector_tabs.setCurrentIndex(1);self.app.processEvents()
         self.assertFalse(self.w.strength.isVisible());self.assertFalse(self.w.convergence.isVisible())

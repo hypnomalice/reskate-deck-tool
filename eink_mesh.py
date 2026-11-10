@@ -5,10 +5,51 @@ from fbmod_compat import Archive,unpack,pack
 from deck_archive import ebx_edit,descriptor_parts,resource,texture_rid,lookup_add
 from ebx_tools import Ebx
 
-def attach(data, names, glitch_names=(), *, shared_runtime=False):
-    a=Archive(data);seed=Archive((Path(__file__).parent/'assets/eink-rim-mesh.fbmod').read_bytes())
+def merge_registrations(current, added):
+    """Union routes by bundle name, preserving every existing hash and route."""
+    def inspect(raw):
+        pool, bundles, lookups = (struct.unpack_from('<Q',raw,q)[0] for q in (16,24,8))
+        def text(token):
+            if token == 0xffffffff:return ''
+            at=pool+(token&0x7fffff);length=token>>24
+            start=at+4 if token&0x800000 else pool+struct.unpack_from('<I',raw,at+4)[0]
+            return text(struct.unpack_from('<I',raw,at)[0])+raw[start:start+length].decode()
+        names=['']+[text(struct.unpack_from('<I',raw,bundles+i*8)[0]) for i in range(1,struct.unpack_from('<I',raw,76)[0])]
+        rows=[struct.unpack_from('<QII',raw,lookups+i*16) for i in range(struct.unpack_from('<I',raw,72)[0])]
+        return pool,bundles,lookups,names,[(h,names[b],text(t),b,t) for h,b,t in rows]
+    pool,bundles,lookups,names,left=inspect(current)
+    *_,right=inspect(added)
+    rows={h:(h,b,t) for h,_,_,b,t in left};routes={h:(n,p) for h,n,p,_,_ in left}
+    extra=bytearray();tokens={p:t for _,_,p,_,t in left}
+    for h,n,p,_,_ in right:
+        if h in rows:
+            if routes[h] != (n,p):raise ValueError('Conflicting private mesh registration: '+p)
+            continue
+        if n not in names:raise ValueError('Private mesh requires an unavailable bundle: '+n)
+        if p not in tokens:
+            encoded=p.encode();tokens[p]=(bundles+len(extra)-pool)|0x800000|(len(encoded)<<24)
+            block=struct.pack('<I',0xffffffff)+encoded;extra+=block+bytes((-len(block))%16)
+        rows[h]=(h,names.index(n),tokens[p])
+    out=bytearray(current[:bundles])+extra+current[bundles:lookups]
+    out+=b''.join(struct.pack('<QII',*rows[h]) for h in sorted(rows))+current[-20:]
+    struct.pack_into('<Q',out,8,lookups+len(extra));struct.pack_into('<Q',out,24,bundles+len(extra));struct.pack_into('<I',out,72,len(rows))
+    return bytes(out),struct.pack('<IIQ',len(out)-20,20,0)
+
+def attach(data, names, glitch_names=(), *, shared_runtime=False, case_names=()):
+    ordinary=[n for n in names if n not in glitch_names and n not in case_names]
+    glitches=[n for n in names if n in glitch_names]
+    if ordinary:data=_attach(data,ordinary,'eink-rim-mesh.fbmod')
+    if glitches:data=_attach(data,glitches,'glitch-opaque-mesh.fbmod',True)
+    cases=[n for n in names if n in case_names]
+    if cases:data=_attach(data,cases,'case-shell-mesh.fbmod',is_case=True)
+    return data
+
+def _attach(data,names,seed_file,is_glitch=False,is_case=False):
+    a=Archive(data);seed=Archive((Path(__file__).parent/'assets'/seed_file).read_bytes())
+    seed_identity=seed.key(13)[1].rsplit('/',1)[-1].removesuffix('_mesh')
+    source_key=struct.unpack_from('<Q',unpack(seed.blobs[20]),16)[0]
     seen=set()
-    for i in range(len(seed.blobs)):
+    for i in ([] if is_glitch or is_case else range(len(seed.blobs))):
         if seed.key(i)[0]!=2 or not seed.key(i)[1].endswith('_mesh'):continue
         p=unpack(seed.blobs[i]);U=lambda q:struct.unpack_from('<I',p,q)[0];P=lambda q:struct.unpack_from('<Q',p,q)[0]+16
         for li in range(6):
@@ -28,7 +69,7 @@ def attach(data, names, glitch_names=(), *, shared_runtime=False):
                     cur+=nv*stride
             seed.replace(ci,raw)
     def rid(ar,i):return struct.unpack_from('<Q',ar.descriptors[i],descriptor_parts(ar.descriptors[i])[2]+4)[0]
-    selected=[i for i in range(10,26) if i!=20]
+    selected=([4,5,6] if is_glitch or is_case else [])+[i for i in range(10,26) if i!=20]
     registration_pairs=[]
     for title in names:
         ns=uuid.uuid5(uuid.NAMESPACE_URL,'sdec/eink-rim/'+title.casefold())
@@ -37,13 +78,16 @@ def attach(data, names, glitch_names=(), *, shared_runtime=False):
         target_tex=next(i for i in range(len(a.blobs)) if a.key(i)==(1,'characters/customization/reskate/board_bottomart/lenticular_'+token+'_color'))
         target_recipe=next(i for i in range(len(a.blobs)) if a.key(i)==(2,'characters/maincharacters/reskate/shaders/lenticular_'+token))
         recipe=unpack(a.blobs[target_recipe]);target_key=struct.unpack_from('<Q',recipe,16)[0]
-        if title in glitch_names:
-            target_key=5194086253280732641
+        if is_glitch or is_case:
+            # Native mesh permutations must retain their matching native key.
+            # The generated public key resolves to a different vertex layout.
+            target_key=source_key
             changed=bytearray(recipe);struct.pack_into('<Q',changed,16,target_key);a.replace(target_recipe,changed)
-        gmap={};rmap={rid(seed,20):rid(a,target_recipe),7035016294165725071:target_key};nmap={seed.key(20)[1]:a.key(target_recipe)[1],seed.key(26)[1]:a.key(target_tex)[1]}
+        gmap={};rmap={rid(seed,20):rid(a,target_recipe),source_key:target_key};nmap={seed.key(20)[1]:a.key(target_recipe)[1],seed.key(26)[1]:a.key(target_tex)[1]}
         for i in selected:
             k,n=seed.key(i)
-            nmap[n]=n.replace('d3467b69-f212-560d-b104-091e3dc19e01',ns.hex)
+            nmap[n]=n.replace(seed_identity,ns.hex)
+            if (is_glitch or is_case) and i in (4,5):nmap[n]=nmap[n]+'_'+ns.hex
             if k==1:
                 e=Ebx(unpack(seed.blobs[i]));gmap[e.f[:16]]=uuid.uuid5(ns,'file/'+n).bytes_le
             elif k==3:gmap[uuid.UUID(n).bytes_le]=uuid.uuid5(ns,'chunk/'+n).bytes_le;nmap[n]=str(uuid.UUID(bytes_le=gmap[uuid.UUID(n).bytes_le]))
@@ -52,9 +96,21 @@ def attach(data, names, glitch_names=(), *, shared_runtime=False):
         gmap[oldtex.f[:16]]=newtex.f[:16]
         # Both texture imports name different exported instances of the same file.
         for old,new in zip(oldtex.inst[:oldtex.ne],newtex.inst[:newtex.ne]):gmap[oldtex.data[old-16:old]]=newtex.data[new-16:new]
+        if is_glitch or is_case:
+            # The native vertex/pixel permutation requires the seed's complete
+            # parameter layout. Changing only the key of a stock recipe loses
+            # native bindings even though the mesh and lookup routes are valid.
+            raw=unpack(seed.blobs[20])
+            for old,new in gmap.items():raw=raw.replace(old,new)
+            for old,new in rmap.items():raw=raw.replace(struct.pack('<Q',old),struct.pack('<Q',new))
+            sd=seed.descriptors[20];_,_,st=descriptor_parts(sd)
+            size=struct.unpack_from('<I',sd,st+12)[0]
+            desc,payload=resource(dict(descriptor=sd.hex()),target_recipe,a.key(target_recipe)[1],raw,pack,
+                tag='reskate-cosmetic-dependency:v1',rid=rid(a,target_recipe),meta=bytes(sd[st+16:st+16+size]))
+            a.descriptors[target_recipe]=desc;a.blobs[target_recipe]=payload
         for i in selected:
             k,n=seed.key(i);raw=unpack(seed.blobs[i]);d=seed.descriptors[i];sha,end,tail=descriptor_parts(d)
-            tag=bytes(d[sha+33:end]).decode().replace('items/board_bottomart/own_sdec_clear_case_hazy_teal',target_item)
+            tag=bytes(d[sha+33:end]).decode().replace(seed.key(8)[1],target_item)
             if k==1:
                 e=Ebx(raw);strings={}
                 for field in e.ptr:
@@ -95,6 +151,7 @@ def attach(data, names, glitch_names=(), *, shared_runtime=False):
             lr=(f/'out').read_bytes();lm=(f/'outmeta').read_bytes()
         # Bundle table contains appearance routes; shader keys belong to the shared shader database.
         ti=a.find(2,'characters/customization/configs/cas_main_bundlereftable')
+        lr,lm=merge_registrations(unpack(a.blobs[ti]),lr)
         td=a.descriptors[ti];_,_,tt=descriptor_parts(td)
         desc,payload=resource(dict(descriptor=td.hex()),ti,a.key(ti)[1],lr,pack,tag=bytes(td[descriptor_parts(td)[0]+33:descriptor_parts(td)[1]]).decode(),rid=rid(a,ti),meta=lm)
         a.descriptors[ti]=desc;a.blobs[ti]=payload
@@ -105,7 +162,7 @@ def attach(data, names, glitch_names=(), *, shared_runtime=False):
         token=uuid.uuid5(uuid.NAMESPACE_URL,'reskate/lenticular/deck/'+title.casefold()).hex
         ns=uuid.uuid5(uuid.NAMESPACE_URL,'sdec/eink-rim/'+title.casefold())
         old='lenticular_'+token+'_ap'
-        new=seed.key(25)[1].replace('d3467b69-f212-560d-b104-091e3dc19e01',ns.hex).rsplit('/',1)[-1]
+        new=seed.key(25)[1].replace(seed_identity,ns.hex).rsplit('/',1)[-1]
         item=a.find(1,'items/board_bottomart/own_lenticular_'+token)
         raw=ebx_edit(unpack(a.blobs[item]),None,None,{}, {old.encode():new.encode()}, {})
         raw=raw.replace(struct.pack('<I',hash_key(old)),struct.pack('<I',hash_key(new)))
