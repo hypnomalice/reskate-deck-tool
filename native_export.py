@@ -65,7 +65,7 @@ def validate_inputs(game_root, compiler):
 def export_zip(projects, destination, progress=lambda message: None, *, title, author='', game_root, compiler):
     import creator_engine
     game, cli = validate_inputs(game_root, compiler)
-    core_loader = any(p.get('mode') in ('glitch', 'case') for p in projects)
+    core_loader = any(p.get('mode') in ('glitch', 'case', 'crystal', 'jiggle') for p in projects)
     # Older CLIs treat unknown options as additional FBMOD filenames. Keep the
     # loader contract intact rather than retrying without the required option.
     if core_loader and b'--board-loader-from-core' not in cli.read_bytes():
@@ -103,6 +103,8 @@ def export_zip(projects, destination, progress=lambda message: None, *, title, a
         patch = stage/'Patch'
         if patch.is_symlink() or not (patch/'layout.toc').is_file():
             raise ValueError('The compiler did not produce a native mod layout. Your previous export is unchanged.')
+        import jiggle_native
+        jiggle_native.write_materials(projects,patch)
         files = sorted(p for p in patch.rglob('*') if p.is_file())
         if any(p.is_symlink() or not p.resolve().is_relative_to(patch.resolve()) for p in files):
             raise ValueError('The compiler output contains an unexpected linked file.')
@@ -120,7 +122,8 @@ def export_zip(projects, destination, progress=lambda message: None, *, title, a
                     f'{title}\n\nInstall this ZIP through the ReSkate launcher, or extract its {name} folder into Mods. '
                     'Keep one current SDEC core enabled at number 1 (the very top) of your mod list.\n'
                     'CD depth movement requires SDEC 2.1.1 or newer; optional sheen requires 2.1.0 or newer.\n'
-                    'SDEC is installed separately from Thunderstore; it is not downloaded or bundled here.\n'
+                    'Crystal and Artwork Springs need SDEC 3.1.0 or newer. Springs preview needs ReSkate 2.1.4-5 Hotfix or newer.\n'
+                    'SDEC is installed separately; it is not downloaded or bundled here.\n'
                     'https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/\n')
                 zipped.writestr(name+'/DECK TOOL README.txt', readme)
                 hashes['DECK TOOL README.txt'] = hashlib.sha256(readme.encode('utf-8')).hexdigest()

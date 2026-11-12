@@ -35,13 +35,14 @@ def merge_registrations(current, added):
     struct.pack_into('<Q',out,8,lookups+len(extra));struct.pack_into('<Q',out,24,bundles+len(extra));struct.pack_into('<I',out,72,len(rows))
     return bytes(out),struct.pack('<IIQ',len(out)-20,20,0)
 
-def attach(data, names, glitch_names=(), *, shared_runtime=False, case_names=()):
+def attach(data, names, glitch_names=(), *, shared_runtime=False, case_names=(), grip_names=()):
     ordinary=[n for n in names if n not in glitch_names and n not in case_names]
     glitches=[n for n in names if n in glitch_names]
     if ordinary:data=_attach(data,ordinary,'eink-rim-mesh.fbmod')
     if glitches:data=_attach(data,glitches,'glitch-opaque-mesh.fbmod',True)
     cases=[n for n in names if n in case_names]
     if cases:data=_attach(data,cases,'case-shell-mesh.fbmod',is_case=True)
+    if grip_names:data=equipped_grip(data,[name for name in grip_names if name in cases])
     return data
 
 def _attach(data,names,seed_file,is_glitch=False,is_case=False):
@@ -171,4 +172,49 @@ def _attach(data,names,seed_file,is_glitch=False,is_case=False):
     if a.find(*seed.key(29)) is None:
         desc=bytearray(seed.descriptors[29]);struct.pack_into('<I',desc,1,len(a.blobs))
         a.descriptors.append(desc);a.blobs.append(seed.blobs[29])
+    return a.bytes()
+
+
+
+def equipped_grip(data,names):
+    """Route the visible top through native grip slot zero in the main mesh.
+
+    The private other-mesh top is not reliably drawn for a custom case appearance.
+    Keep the existing main top geometry, restore the native grip material/pass
+    metadata and UVs, and hide the duplicate other top. No grip texture is added.
+    """
+    if not names:return data
+    a=Archive(data)
+    original=Archive((Path(__file__).parent/'assets/eink-rim-mesh.fbmod').read_bytes())
+    donor_index=next(i for i in range(len(original.blobs)) if original.key(i)[0]==2 and original.key(i)[1].endswith('_mesh_other'))
+    donor=unpack(original.blobs[donor_index])
+    for title in names:
+        token=uuid.uuid5(uuid.NAMESPACE_URL,'sdec/eink-rim/'+title.casefold()).hex
+        for suffix,main in (('_mesh',True),('_mesh_other',False)):
+            index=next(i for i in range(len(a.blobs)) if a.key(i)[0]==2 and a.key(i)[1].endswith(token+suffix))
+            raw=bytearray(unpack(a.blobs[index]))
+            for lod in range(6):
+                at=struct.unpack_from('<Q',raw,48+lod*8)[0]+16
+                section=struct.unpack_from('<Q',raw,at+12)[0]+16
+                oldlod=struct.unpack_from('<Q',donor,48+lod*8)[0]+16
+                oldsection=struct.unpack_from('<Q',donor,oldlod+12)[0]+16
+                count=struct.unpack_from('<I',donor,oldsection+32)[0] if main else 0
+                struct.pack_into('<I',raw,section+32,count)
+                if main:
+                    raw[section+28]=0
+                    for off,length in ((0x138,8),(0x144,8)):raw[section+off:section+off+length]=donor[oldsection+off:oldsection+off+length]
+                    chunk=a.find(3,str(uuid.UUID(bytes_le=bytes(raw[at+116:at+132]))));vertices=bytearray(unpack(a.blobs[chunk]));d=section+112;cursor=struct.unpack_from('<I',raw,section+40)[0];nv=struct.unpack_from('<I',raw,section+44)[0]
+                    for stream in range(raw[d+97]):
+                        stride=raw[d+64+stream*2]
+                        for element in range(raw[d+96]):
+                            usage,fmt,off,st=raw[d+element*4:d+element*4+4]
+                            if st==stream and usage==0x21:
+                                assert fmt==6
+                                for j in range(nv):
+                                    where=cursor+off+j*stride;u,v=struct.unpack_from('<2e',vertices,where)
+                                    if 2<=u<3:u-=2
+                                    struct.pack_into('<2e',vertices,where,u,v)
+                        cursor+=nv*stride
+                    a.replace(chunk,vertices)
+            a.replace(index,raw)
     return a.bytes()

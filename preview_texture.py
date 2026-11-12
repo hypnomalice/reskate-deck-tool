@@ -25,4 +25,5 @@ def prepare(project, mode, progress=lambda message: None):
     import creator_engine
     from effect_preview import AtlasPreview
     texture = creator_engine.export_texture(project, progress)
+    if mode=='jiggle':return AtlasPreview(texture['preview_atlas'],mode)
     return AtlasPreview(decode_bc7(texture['texture'], texture['texture_size']), mode)

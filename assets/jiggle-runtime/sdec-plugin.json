@@ -1,0 +1,16 @@
+{
+  "api": 1,
+  "entry": "plugin/main.lua",
+  "side": "client",
+  "permissions": [
+    "room",
+    "board",
+    "menu",
+    "skater.read"
+  ],
+  "variant_additions": {
+    "contribute": [
+      "win32/characters/skateboard/unlicensed/deck/generic/popsicle/2022/deck_gen_popsicle_cas_main_bundlereftable"
+    ]
+  }
+}

@@ -59,6 +59,7 @@ class AtlasPreview:
         import surface_finish
         w,h=size;u=(np.arange(w,dtype=np.float32)[None,:]+.5)/w;v=(np.arange(h,dtype=np.float32)[:,None]+.5)/h
         left,top,right,bottom=region;u=left+u*(right-left);v=top+v*(bottom-top)
+        if self.mode in ('crystal','jiggle'):return image
         return surface_finish.preview(image,angle,u,v,self.surface_marker,self.sample(.875,39/4096) if self.mode in ('layers','layers3','smooth') else None)
 
     def _render_effect(self, angle, size=(210, 840), region=(0, 0, 1, 1), view_profile=None, view_pose=None, material=False):
@@ -69,9 +70,15 @@ class AtlasPreview:
         u = left + u * (right - left)
         v = top + v * (bottom - top)
         angle = float(np.clip(angle, -1, 1))
-        if view_profile is not None and self.mode not in ('metal','ink','window','liquid','neon','cd','eink','glitch','case'):
+        if view_profile is not None and self.mode not in ('metal','ink','window','liquid','neon','cd','eink','glitch','case','crystal'):
             bias,curve,*scale=view_profile
             angle=np.clip(angle*(scale[0] if scale else 1)+bias+curve*(u-.5),-1,1)
+        if self.mode=='jiggle':
+            import jiggle_effect
+            return jiggle_effect.render(self,angle,u,v,view_pose)
+        if self.mode=='crystal':
+            import crystal_finish
+            return crystal_finish.preview(self,angle,u,v)
         if self.mode=='case':
             import case_finish
             return case_finish.preview(self,angle,u,v)

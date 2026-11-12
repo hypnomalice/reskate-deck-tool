@@ -7,44 +7,53 @@ from board_preview import surface, texture_uv, rotate, DECK_THICKNESS, CAMERA_DI
 
 
 def draw_3d(painter, widget):
-    scale=min((widget.height()-62)/4.5,(widget.width()-52)/2.2)
-    @lru_cache(maxsize=None)
-    def point(u,v,layer=0):
-        x,y,z=surface(u,v)
-        x,y,z=rotate(x,y,z+layer*DECK_THICKNESS,widget.yaw,widget.pitch)
-        perspective=CAMERA_DISTANCE/(CAMERA_DISTANCE+z)
-        return QPointF(widget.width()/2+x*scale*perspective,widget.height()/2+y*scale*perspective),z
-    rows,columns=48,6
-    plies=7 if scale*DECK_THICKNESS>=10 else 3
-    # More samples at the round tips without increasing the number of painted faces.
-    steps=[.5-.5*math.cos(math.pi*j/rows) for j in range(rows+1)]
-    perimeter=[(0,v) for v in steps]+[(1,v) for v in reversed(steps)]
-    faces=[]
-    # Seven actual shell layers replace the constant-width painted wood outline.
-    for a,b in zip(perimeter,perimeter[1:]+perimeter[:1]):
-        for ply in range(plies):
-            corners=[point(*a,ply/plies),point(*b,ply/plies),point(*b,(ply+1)/plies),point(*a,(ply+1)/plies)]
-            faces.append((sum(z for _,z in corners)/4,QPolygonF([q for q,_ in corners]),None,ply))
-    for j in range(rows):
-        for i in range(columns):
-            u0,u1,v0,v1=i/columns,(i+1)/columns,steps[j],steps[j+1]
-            coords=[(u0,v0),(u1,v0),(u1,v1),(u0,v1)]
-            corners=[point(u,v) for u,v in coords]
-            source=QPolygonF([QPointF(texture_uv(u,v)[0]*widget.frame.width(),v*widget.frame.height()) for u,v in coords])
-            faces.append((sum(z for _,z in corners)/4,QPolygonF([q for q,_ in corners]),source,None))
+    key=(widget.width(),widget.height(),widget.yaw,widget.pitch,widget.frame.width(),widget.frame.height())
+    if getattr(widget,'_surface_plan_key',None)!=key:
+        scale=min((widget.height()-62)/4.5,(widget.width()-52)/2.2)
+        @lru_cache(maxsize=None)
+        def point(u,v,layer=0):
+            x,y,z=surface(u,v)
+            x,y,z=rotate(x,y,z+layer*DECK_THICKNESS,widget.yaw,widget.pitch)
+            perspective=CAMERA_DISTANCE/(CAMERA_DISTANCE+z)
+            return QPointF(widget.width()/2+x*scale*perspective,widget.height()/2+y*scale*perspective),z
+        rows,columns=48,6
+        plies=7 if scale*DECK_THICKNESS>=10 else 3
+        # More samples at the round tips without increasing the number of painted faces.
+        steps=[.5-.5*math.cos(math.pi*j/rows) for j in range(rows+1)]
+        perimeter=[(0,v) for v in steps]+[(1,v) for v in reversed(steps)]
+        faces=[]
+        # Seven actual shell layers replace the constant-width painted wood outline.
+        for a,b in zip(perimeter,perimeter[1:]+perimeter[:1]):
+            for ply in range(plies):
+                corners=[point(*a,ply/plies),point(*b,ply/plies),point(*b,(ply+1)/plies),point(*a,(ply+1)/plies)]
+                faces.append((sum(z for _,z in corners)/4,QPolygonF([q for q,_ in corners]),None,ply))
+        for j in range(rows):
+            for i in range(columns):
+                u0,u1,v0,v1=i/columns,(i+1)/columns,steps[j],steps[j+1]
+                coords=[(u0,v0),(u1,v0),(u1,v1),(u0,v1)]
+                corners=[point(u,v) for u,v in coords]
+                source=QPolygonF([QPointF(texture_uv(u,v)[0]*widget.frame.width(),v*widget.frame.height()) for u,v in coords])
+                faces.append((sum(z for _,z in corners)/4,QPolygonF([q for q,_ in corners]),source,None))
+        plan=[]
+        for _,polygon,source,ply in sorted(faces,key=lambda f:f[0],reverse=True):
+            transform=QTransform();clip=None
+            if source is not None:
+                if not QTransform.quadToQuad(source,polygon,transform):continue
+                clip=QPainterPath();clip.addPolygon(polygon)
+                stroke=QPainterPathStroker();stroke.setWidth(.5)
+                clip=clip.united(stroke.createStroke(clip))
+            plan.append((polygon,source,ply,transform,clip))
+        widget._surface_plan_key=key;widget._surface_plan=(plan,point)
+    plan,point=widget._surface_plan
     painter.setPen(Qt.NoPen)
     painter.setRenderHint(QPainter.Antialiasing,False)
-    for _,polygon,source,ply in sorted(faces,key=lambda f:f[0],reverse=True):
+    for polygon,source,ply,transform,clip in plan:
         if source is None:
             colour=QColor(widget.wood);colour=colour.lighter(110) if ply%2==0 else colour.darker(120)
             painter.setBrush(colour);painter.drawPolygon(polygon)
             continue
-        transform=QTransform()
-        if not QTransform.quadToQuad(source,polygon,transform):continue
         painter.save()
-        clip=QPainterPath();clip.addPolygon(polygon)
-        stroke=QPainterPathStroker();stroke.setWidth(.5)
-        painter.setClipPath(clip.united(stroke.createStroke(clip)))
+        painter.setClipPath(clip)
         painter.setTransform(transform,True)
         full=QRectF(widget.frame.rect());painter.drawPixmap(full,widget.frame,full)
         painter.restore()

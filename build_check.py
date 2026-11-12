@@ -13,12 +13,27 @@ def check_digital(folder):
     folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
     try:
         image=folder/'art.png';Image.new('RGB',(512,2048),'#715382').save(image)
-        projects=[dict(name='Bundled '+mode,mode=mode,images=[str(image),str(image)]) for mode in ('glitch','eink','case')]
+        projects=[dict(name='Bundled '+mode,mode=mode,images=[str(image),str(image)]) for mode in ('glitch','eink','case','crystal')]
+        mask=folder/'jiggle-mask.png';im=Image.new('L',(512,2048));ImageDraw.Draw(im).ellipse((90,700,420,1400),fill=255);im.save(mask)
+        jiggle=dict(name='Bundled springs',mode='jiggle',images=[str(image),str(image)],jiggle=dict(mask=str(mask),amount=72,stiffness=43,attachment='both'))
+        projects.append(jiggle)
         output=engine.export_pack(projects,folder/'Digital checks.fbmod',shared_runtime=True)
         from fbmod_compat import Archive
         a=Archive(output.read_bytes())
         assert a.find(2,'characters/lua/skaterboardlualoaderasset') is not None
-        report=dict(ok=True,bundled_helper=True,mixed_export=True)
+        crystal=next(p for p in projects if p['mode']=='crystal')
+        crystal['crystal']=dict(tint='#9474d2',cuts=48,grip_tape=True)
+        import crystal_finish
+        assert AtlasPreview(crystal_finish.pack(Image.open(image),crystal['crystal']),'crystal').render(.4).size==(210,840)
+        import jiggle_effect,jiggle_physics
+        assert AtlasPreview(jiggle_effect.pack(Image.open(image),Image.open(image),jiggle['jiggle']),'jiggle').render(.4).size==(210,840)
+        native=False
+        if (folder/'compile-config.json').exists():
+            import native_export
+            setup=json.loads((folder/'compile-config.json').read_text())
+            native_export.export_folder([crystal,jiggle],folder/'Bundled crystal and springs native',title='Bundled crystal and springs native',**setup)
+            native=True
+        report=dict(ok=True,bundled_helper=True,mixed_export=True,crystal_preview=True,jiggle_preview=True,native_compile=native)
     except Exception:
         import traceback
         report=dict(ok=False,error=traceback.format_exc())
@@ -213,7 +228,7 @@ def check(folder):
         assert len(cd_headers)==1 and struct.unpack_from('<I',cd_headers[0],12)[0]==20 and cd_headers[0][30]==13
         assert not set(cd_archive.key(i) for i in range(len(cd_archive.blobs))) & shared_keys()
         report['cd_controls_and_rotated_export']=True
-        digital=[dict(name='Packaged '+mode,mode=mode,images=images) for mode in ('glitch','eink','case')]
+        digital=[dict(name='Packaged '+mode,mode=mode,images=images) for mode in ('glitch','eink','case','crystal')]
         exported=engine.export_pack(digital,folder/'Digital checks.fbmod',shared_runtime=True)
         checked=Archive(exported.read_bytes())
         assert checked.find(2,'characters/lua/skaterboardlualoaderasset') is not None

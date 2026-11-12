@@ -328,7 +328,7 @@ class Creator(QMainWindow):
 
     def showEvent(self,event):
         super().showEvent(event)
-        if hasattr(self,'animation_timer') and (self.clip or self.current()['mode']=='glitch'):self.animation_timer.start()
+        if hasattr(self,'animation_timer') and (self.clip or self.current()['mode'] in ('glitch','jiggle')):self.animation_timer.start()
 
     def save_project(self):
         if self.busy:
@@ -388,6 +388,7 @@ class Creator(QMainWindow):
                 deck['thumbnail'] = str((Path(path).parent/deck['thumbnail']).resolve())
             for cfg in deck.get('ghost',{}).values():
                 if cfg.get('mask'):cfg['mask']=str((Path(path).parent/cfg['mask']).resolve())
+            if deck.get('jiggle',{}).get('mask'):deck['jiggle']['mask']=str((Path(path).parent/deck['jiggle']['mask']).resolve())
             for key in ('screw_mask','detail_mask'):
                 if deck.get('case',{}).get(key):deck['case'][key]=str((Path(path).parent/deck['case'][key]).resolve())
             normalized.append(deck)
@@ -413,7 +414,7 @@ class Creator(QMainWindow):
         try:
             for d in projects:
                 engine.validate_name(d['name'])
-                if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch','case') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
+                if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch','case','crystal','jiggle') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
                     raise ValueError('Choose the images for '+d['name']+'.')
             if len({engine.validate_name(d['name']).casefold() for d in projects})!=len(projects):
                 raise ValueError('Give each deck a different name.')
@@ -424,6 +425,9 @@ class Creator(QMainWindow):
         mode = self.export_mode.currentData()
         folder_export = mode == 'game'
         native = mode != 'fbmod'
+        if not native and any(p.get('mode')=='jiggle' for p in projects):
+            QMessageBox.warning(self,'Choose an installable export','Artwork Springs needs Mod ZIP or Install to game so the deck includes its movement settings.')
+            return
         if folder_export:
             folder_name,accepted = QInputDialog.getText(self,'Name your deck pack','Folder name in Mods:',text=title)
             if not accepted:
@@ -853,7 +857,7 @@ class Creator(QMainWindow):
         right.addLayout(row)
         self.board = Board()
         self.board.orbit_changed.connect(self.preview_orbit_changed)
-        right.addWidget(self.board,1)
+        __import__('jiggle_preview_ui').install(self,right)
         inspector_pane = QWidget()
         inspector_layout = QVBoxLayout(inspector_pane)
         inspector_layout.setContentsMargins(5,0,0,0)
@@ -904,8 +908,8 @@ class Creator(QMainWindow):
         case_layout=QVBoxLayout(self.case_box)
         self.case_style=QComboBox();self.case_style.addItems(['Frosted / hazy','Clear / glossy'])
         self.case_style.currentIndexChanged.connect(self.changed);case_layout.addWidget(self.case_style)
-        self.case_grip=QCheckBox('Grip tape');self.case_grip.setChecked(False)
-        self.case_grip.setToolTip('Keep normal grip tape on the top. Off shows the simulated shell on both sides.')
+        self.case_grip=QCheckBox('Use equipped grip tape');self.case_grip.setChecked(False)
+        self.case_grip.setToolTip('Use the grip item equipped in ReSkate. Off shows the shell artwork on top.')
         self.case_grip.toggled.connect(self.changed);case_layout.addWidget(self.case_grip)
         self.case_tint=QPushButton('Shell tint');self.case_tint.clicked.connect(self.choose_case_tint);case_layout.addWidget(self.case_tint)
         self.case_tint_strength=Adjustment('Tint strength',35,0,100)
@@ -927,6 +931,17 @@ class Creator(QMainWindow):
         self.case_help.setMinimumWidth(0)
         case_layout.addWidget(self.case_help)
         effects.addWidget(self.case_box)
+        import jiggle_ui
+        jiggle_ui.install(self,effects,Adjustment)
+        self.crystal_box=QGroupBox('Cut crystal')
+        crystal_layout=QVBoxLayout(self.crystal_box)
+        self.crystal_tint=QPushButton('Crystal tint');self.crystal_tint.clicked.connect(self.choose_crystal_tint);crystal_layout.addWidget(self.crystal_tint)
+        self.crystal_cuts=Adjustment('Cut amount',140,12,400)
+        self.crystal_cuts.setToolTip('Fewer large facets or more small facets. Deterministic triangular cuts; the total is approximate.')
+        self.crystal_cuts.changed.connect(self.changed);crystal_layout.addWidget(self.crystal_cuts)
+        self.crystal_grip=QCheckBox('Use equipped grip tape');self.crystal_grip.setChecked(False);self.crystal_grip.toggled.connect(self.changed);crystal_layout.addWidget(self.crystal_grip)
+        crystal_hint=QLabel('Artwork refracted through simulated crystal cuts. Uses the grip item equipped in ReSkate; exposed top artwork is static and mirrored. Requires the experimental crystal-enabled SDEC core.')
+        crystal_hint.setWordWrap(True);crystal_layout.addWidget(crystal_hint);effects.addWidget(self.crystal_box)
         self.digital_box=QGroupBox('Display behaviour')
         digital_layout=QVBoxLayout(self.digital_box)
         self.eink_span=Adjustment('Refresh tilt range',155,20,200,tip='Wider ranges spread the original flash across more tilt. The page switches at full flash in either direction.')
@@ -1110,6 +1125,8 @@ class Creator(QMainWindow):
             cfg.update(selection=('all','mask','colour')[method.currentIndex()],tolerance=tolerance.value()/100)
         case_masks={k:d.get('case',{}).get(k) for k in ('screw_mask','detail_mask')}
         d['case']=dict(**case_masks,finish=('frosted','glossy')[self.case_style.currentIndex()],tint=d.get('case',{}).get('tint','#d9e6e7'),tint_strength=self.case_tint_strength.value()/100,haze=self.case_haze.value()/100,depth=self.case_depth.value()*.0006,grip_tape=self.case_grip.isChecked())
+        __import__('jiggle_ui').remember(self,d)
+        d['crystal']=dict(d.get('crystal',{}),tint=d.get('crystal',{}).get('tint','#c5e4fa'),cuts=round(self.crystal_cuts.value()),grip_tape=self.crystal_grip.isChecked())
         d['eink']=dict(span=self.eink_span.value()/100,ghosting=self.eink_ghosting.value()/100)
         d['glitch']=dict(preset=('tearing','rgb','dropout')[self.glitch_style.currentIndex()],strength=self.glitch_strength.value()/100,density=self.glitch_density.value(),speed=self.glitch_speed.value(),colour_mode=('rgb','one','two')[self.glitch_colours.currentIndex()],colour1=d.get('glitch',{}).get('colour1','#ff1744'),colour2=d.get('glitch',{}).get('colour2','#00e5ff'))
         d['ink']=dict(background_colour=d.get('ink',{}).get('background_colour','#242c42'),revealed_colour=d.get('ink',{}).get('revealed_colour','#88c0d3'),showthrough=self.ink_showthrough.value()/100,strength=self.ink_strength.value()/100,contrast=self.ink_contrast.value()/100,invert=self.ink_invert.isChecked())
@@ -1156,6 +1173,9 @@ class Creator(QMainWindow):
         for key,label in self.case_masks.items():label.setText(Path(cc[key]).name if cc.get(key) else 'Default arrangement')
         self.case_tint_strength.set_value(cc['tint_strength']*100);self.case_haze.set_value(cc['haze']*100);self.case_depth.set_value(cc['depth']/.0006)
         self.case_tint.setText('Shell tint '+cc['tint'])
+        __import__('jiggle_ui').apply(self,d)
+        import crystal_finish
+        crystal=crystal_finish.settings(d.get('crystal'));self.crystal_tint.setText('Crystal tint '+crystal['tint']);self.crystal_cuts.set_value(crystal['cuts']);self.crystal_grip.setChecked(crystal['grip_tape'])
         ec=digital_finish.settings('eink',d.get('eink'));gc=digital_finish.settings('glitch',d.get('glitch'))
         self.eink_span.set_value(ec['span']*100);self.eink_ghosting.set_value(ec['ghosting']*100)
         self.glitch_style.setCurrentIndex(list(digital_finish.PRESETS).index(gc['preset']))
@@ -1215,7 +1235,7 @@ class Creator(QMainWindow):
             self.effect_picker.setCurrentIndex(self.mode.currentIndex()+1 if chosen else 0)
             self.effect_picker.blockSignals(False)
             self.inspector_tabs.setVisible(chosen)
-        names = {'case':('Internal artwork','Unused'),'eink':('Page 1','Page 2'),'glitch':('Artwork','Unused'),'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'ghost':('Colour image','Depth map'),'cd':('Artwork','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused'),'metal':('Graphic','Unused'),'ink':('Graphic','Reveal mask (white reveals ink)'),'window':('Front frame (transparent PNG)','Background'),'liquid':('Front image (transparent PNG)','Background'),'neon':('Artwork','Glow mask (white glows, black stays unlit)')}[mode]
+        names = {'jiggle':('Artwork','Depth map (optional)'), 'crystal':('Embedded artwork','Unused'),'case':('Internal artwork','Unused'),'eink':('Page 1','Page 2'),'glitch':('Artwork','Unused'),'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'ghost':('Colour image','Depth map'),'cd':('Artwork','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused'),'metal':('Graphic','Unused'),'ink':('Graphic','Reveal mask (white reveals ink)'),'window':('Front frame (transparent PNG)','Background'),'liquid':('Front image (transparent PNG)','Background'),'neon':('Artwork','Glow mask (white glows, black stays unlit)')}[mode]
         self.lenticular.setVisible(mode in ('depth','layers'))
         self.lenticular_help.setVisible(mode in ('depth','layers'))
         self.lenticular.setEnabled(not self.busy)
@@ -1223,10 +1243,13 @@ class Creator(QMainWindow):
             label.setText(names[i])
             self.image_names[i].setText(Path(self.current()['images'][i]).name if self.current()['images'][i] else '')
             for w in (label,self.image_names[i],self.image_buttons[i]):
-                w.setVisible(i==0 or (mode not in ('gif','metal','glitch','case') and not (mode=='neon' and self.neon_method.currentIndex()==1)))
+                w.setVisible(i==0 or (mode not in ('gif','metal','glitch','case','crystal') and not (mode=='neon' and self.neon_method.currentIndex()==1)))
         for w in (self.auto_button,self.auto_help):
             w.setVisible(mode in ('depth','ghost','cd'))
         self.case_box.setVisible(mode=='case')
+        self.crystal_box.setVisible(mode=='crystal')
+        self.jiggle_box.setVisible(mode=='jiggle')
+        if mode=='jiggle' and self.view_mode.currentText()!='3D':self.view_mode.setCurrentText('3D')
         self.case_haze.setEnabled(self.case_style.currentIndex()==0 and not self.busy)
         self.digital_box.setVisible(mode in ('eink','glitch'))
         for control in (self.eink_span,self.eink_ghosting):control.setVisible(mode=='eink')
@@ -1247,7 +1270,7 @@ class Creator(QMainWindow):
         self.middle_name.setText(Path(self.current()['middle_image']).name if self.current().get('middle_image') else '')
         for control in self.layer_depth_controls:control.setVisible(three)
         self.convergence.setVisible(not three)
-        count=1 if mode in ('metal','glitch','case') else 3 if (three or mode=='window' and self.current().get('middle_image')) else 2
+        count=1 if mode in ('metal','glitch','case','crystal') else 3 if (three or mode=='window' and self.current().get('middle_image')) else 2
         placement_labels=['Artwork','Depth map'] if mode in ('depth','ghost','cd') else ['Animation'] if mode=='gif' else ['Graphic'] if mode=='metal' else ['Front frame','Background','Object layer'][:count] if mode=='window' else ['Foreground','Background','Middle layer'] if three else ['First image','Second image']
         if [self.placement_choice.itemText(i) for i in range(self.placement_choice.count())]!=placement_labels:
             self.placement_choice.blockSignals(True)
@@ -1259,7 +1282,7 @@ class Creator(QMainWindow):
         self.bands.setEnabled(mode in ('depth','layers') and self.lenticular.isChecked() and not self.busy)
         self.bands.setVisible(mode in ('depth','layers') and self.lenticular.isChecked())
         for w in (self.strength,self.convergence,self.invert):
-            w.setVisible(mode not in ('classic','metal','ink','window','liquid','neon','eink','glitch','case') and not (three and w==self.convergence))
+            w.setVisible(mode not in ('classic','metal','ink','window','liquid','neon','eink','glitch','case','crystal','jiggle') and not (three and w==self.convergence))
         for control in (self.ink_background,self.ink_revealed,self.ink_showthrough,self.ink_strength,self.ink_contrast,self.ink_invert):
             control.setVisible(mode=='ink');control.setEnabled(not self.busy)
         self.surface_strength.setEnabled(self.surface_shimmer.isChecked() and not self.busy)
@@ -1270,7 +1293,7 @@ class Creator(QMainWindow):
         if hasattr(self,'cd_surface_box'):self.cd_surface_box.setVisible(cd_on)
         if cd_on:
             self.strength.hide();self.convergence.hide()
-        self.surface_box.setVisible(not cd_on)
+        self.surface_box.setVisible(not cd_on and mode not in ('crystal','jiggle'))
         holo_supported=mode in ('depth','layers')
         self.surface_holo.setVisible(holo_supported);self.surface_holo_strength.setVisible(holo_supported)
         self.surface_holo_strength.setEnabled(self.surface_holo.isChecked() and not self.busy)
@@ -1360,6 +1383,11 @@ class Creator(QMainWindow):
     def clear_case_mask(self,key):
         self.current().setdefault('case',{})[key]=None
         self.case_masks[key].setText('Default arrangement');self.changed()
+
+    def choose_crystal_tint(self):
+        cfg=self.current().setdefault('crystal',{})
+        colour=QColorDialog.getColor(QColor(cfg.get('tint','#c5e4fa')),self,'Crystal tint')
+        if colour.isValid():cfg['tint']=colour.name();self.crystal_tint.setText('Crystal tint '+colour.name());self.changed()
 
     def choose_case_tint(self):
         cfg=self.current().setdefault('case',{})
@@ -1511,7 +1539,7 @@ class Creator(QMainWindow):
             return
         self.remember()
         d = copy.deepcopy(self.current())
-        if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch','case') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
+        if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch','case','crystal','jiggle') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
             self.status.setText('Choose the images for this effect.')
             self.make_thumbnail()
             return
@@ -1545,13 +1573,16 @@ class Creator(QMainWindow):
                     sources = cached_sources
                     if sources is None:
                         sources = []
-                        paths=(d['images'][:1] if d['mode'] in ('metal','glitch','case') or (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') else d['images'])+([d['middle_image']] if d['mode'] in ('layers','window') and d.get('middle_image') else [])
+                        paths=(d['images'][:1] if d['mode'] in ('metal','glitch','case','crystal') or (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') else d['images'])+([d['middle_image']] if d['mode'] in ('layers','window') and d.get('middle_image') else [])
                         for path in paths:
+                            if path is None and d['mode']=='jiggle':
+                                sources.append(Image.new('RGBA',(512,2048),(0,0,0,255)));continue
                             with Image.open(path) as source:
                                 source = ImageOps.exif_transpose(source).convert('RGBA')
                                 source.thumbnail((1024,4096),Image.Resampling.LANCZOS)
                                 sources.append(source)
-                    images = [image_placement.frame(source,d['background_fit'] if d['mode']=='layers' and i==1 else d['fit'],d['background'],d.get('middle_placement',{}) if i==2 else d['placement'][i],alpha=(d['mode'] in ('layers','window','liquid') and i in (0,2)) or (d['mode']=='neon' and i==1),depth=d['mode'] in ('depth','ghost','cd','ink') and i==1) for i,source in enumerate(sources)]
+                    if d['mode']=='jiggle':d['placement'][1]=dict(d['placement'][0])
+                    images = [image_placement.frame(source,d['background_fit'] if d['mode']=='layers' and i==1 else d['fit'],d['background'],d.get('middle_placement',{}) if i==2 else d['placement'][i],alpha=(d['mode'] in ('layers','window','liquid') and i in (0,2)) or (d['mode']=='neon' and i==1),depth=d['mode'] in ('depth','ghost','cd','ink','jiggle') and i==1) for i,source in enumerate(sources)]
                     if d['mode'] in ('depth','ghost','cd') and settings.get('invert'):
                         images[1] = ImageOps.invert(images[1].convert('RGB'))
                     strength,convergence,bands = (settings.get(k,v) for k,v in [('strength',.04),('convergence',.5),('bands',1)])
@@ -1559,7 +1590,14 @@ class Creator(QMainWindow):
                         if revision!=self.revision:
                             raise InterruptedError()
                     preview_mode=d['mode']
-                    if d['mode']=='case':
+                    if d['mode']=='jiggle':
+                        import jiggle_effect
+                        mask=jiggle_effect.mask_image(d.get('jiggle'),d['fit'],d['placement'][0])
+                        atlas=jiggle_effect.pack(images[0],images[1] if len(images)>1 else None,d.get('jiggle'),mask=mask);preview_mode='jiggle';thumbs=[images[0],images[0]]
+                    elif d['mode']=='crystal':
+                        import crystal_finish
+                        atlas=crystal_finish.pack(images[0],d.get('crystal'));preview_mode='crystal';thumbs=[images[0],images[0]]
+                    elif d['mode']=='case':
                         import case_finish
                         atlas=case_finish.pack(images[0],d.get('case'));preview_mode='case';thumbs=[images[0],images[0]]
                     elif d['mode'] in ('eink','glitch'):
@@ -1651,6 +1689,7 @@ class Creator(QMainWindow):
                 dragging = self.angle.slider.isSliderDown() or self.orbit_dragging
                 wanted = self.frame_request_key
                 acceptable = key == wanted or (dragging and wanted is not None and key[2:7] == wanted[2:7] and key[7][:2] == wanted[7][:2] and key[-1] == wanted[-1])
+                if self.current()['mode']=='jiggle' and wanted is not None and key[0]==wanted[0] and key[2:7]==wanted[2:7] and key[7][:2]==wanted[7][:2]:acceptable=True
                 if revision == self.revision and acceptable:
                     if error:
                         self.last_key = key
@@ -1680,7 +1719,7 @@ class Creator(QMainWindow):
                         if not keep_clock:
                             self.started = time.monotonic()
                         self.clip_path = self.current()['images'][0] if self.clip else None
-                        if (self.clip or self.current()['mode']=='glitch') and self.isVisible():self.animation_timer.start()
+                        if (self.clip or self.current()['mode'] in ('glitch','jiggle')) and self.isVisible():self.animation_timer.start()
                         else:self.animation_timer.stop()
                         self.status.setText('Ready · preview before game lighting')
                         self.last_key = None
@@ -1783,10 +1822,21 @@ class Creator(QMainWindow):
         angle,bands = self.angle.value()/100,self.bands.value()/100
         gif_index = self.clip.frame_index(((time.monotonic()-self.started)*1000)%self.clip.duration_ms) if self.clip else None
         glitch_tick=int((time.monotonic()-self.started)*24) if mode=='glitch' else None
+        if mode=='jiggle':
+            now=time.monotonic()
+            if not hasattr(self,'jiggle_solver'):return
+            self.poll_timer.setTimerType(Qt.PreciseTimer)
+            self.animation_timer.setTimerType(Qt.PreciseTimer)
+            self.poll_timer.setInterval(8)
+            glitch_tick=int(now*60)
+            self.animation_timer.setInterval(16)
+            if not self.animation_timer.isActive():self.animation_timer.start()
+        else:self.animation_timer.setInterval(42);self.poll_timer.setInterval(60)
         quality=self.preview_quality.currentIndex() if hasattr(self,'preview_quality') else 1
         width=(120,180,256)[quality]
         if self.angle.slider.isSliderDown() or self.orbit_dragging:width=min(width,96)
         elif self.large:width=min(320,width*2)
+        if mode=='jiggle':width=min(width,128)
         size=(width,width*4)
         surface_state = (self.view_mode.currentText(),self.studio_light.isChecked(),self.board.yaw,self.board.pitch)
         key = (self.revision,angle,bands,self.detail_toggle.isChecked(),gif_index,size,self.live_placement,surface_state,active_renderer is self.export_renderer and active_renderer is not None,glitch_tick)
@@ -1803,14 +1853,21 @@ class Creator(QMainWindow):
                 if active_renderer is not self.export_renderer:
                     self.frame_renderer.set_lens_strength(bands)
                 self.frame_renderer_key = renderer_key
+                if mode=='jiggle':__import__('jiggle_preview_ui').region(self.frame_renderer)
             snapshot = self.frame_renderer
-            if glitch_tick is not None:
-                snapshot=copy.copy(snapshot)
-                snapshot.clock_seconds=glitch_tick/24
+            if mode=='glitch':
+                snapshot=copy.copy(snapshot);snapshot.clock_seconds=glitch_tick/24
+            elif mode=='jiggle':
+                snapshot=copy.copy(snapshot);snapshot.jiggle_particles=self.jiggle_solver.particles.copy()
+                snapshot.jiggle_attachment=self.current().get('jiggle',{}).get('attachment','top')
             self.frame_worker = True
             def draw():
                 try:
-                    result = (key, self.prepare_surface(self.effect_frame(snapshot,angle,size,key), key), None)
+                    image=self.effect_frame(snapshot,angle,size,key)
+                    crop=__import__('jiggle_preview_ui').detail(snapshot,angle,key[7][2:4]) if mode=='jiggle' else None
+                    image=self.prepare_surface(image,key)
+                    if crop is not None:image.info['springs_detail']=crop
+                    result = (key,image,None)
                 except Exception as exc:
                     result = (key, None, str(exc))
                 self.events.put(('frame', key[0], result))
@@ -1853,7 +1910,7 @@ class Creator(QMainWindow):
     def effect_frame(renderer,angle,size,key,region=None):
         if key[7][0]=='3D' and getattr(renderer,'mode',None) in ('classic','multi','depth','smooth','ghost'):
             return renderer.render(angle,size,region or (0,0,1,1),view_profile=board_preview.LENS_VIEW_PROFILE)
-        if key[7][0]=='3D' and getattr(renderer,'mode',None) in ('metal','ink','window','liquid'):
+        if key[7][0]=='3D' and getattr(renderer,'mode',None) in ('metal','ink','window','liquid','jiggle'):
             return renderer.render(angle,size,region or (0,0,1,1),view_pose=key[7][2:4])
         if key[7][1] and getattr(renderer,'mode',None)=='neon':
             return renderer.render(angle,size,region or (0,0,1,1),material=True)
@@ -1873,6 +1930,7 @@ class Creator(QMainWindow):
 
     def present_frame(self, image, key, prepared=False):
         mode = self.current()['mode']
+        __import__('jiggle_preview_ui').present(self,image)
         angle, bands = key[1:3]
         self.last_key = key
         cd_on=self.current().get('mode')=='cd'
