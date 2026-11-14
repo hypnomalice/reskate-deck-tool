@@ -29,7 +29,7 @@ class JiggleTests(unittest.TestCase):
         np.testing.assert_allclose(renderer.sample(.125,36/4096)[:2],[.4,.45],atol=.004)
         np.testing.assert_allclose(renderer.sample(.375,36/4096)[:2],[.6,.65],atol=.004)
         self.assertGreater(renderer.motion[2],.99)
-        self.assertRaises(ValueError,jiggle_effect.pack,self.art,self.depth,dict(c,top_pin=[.4,.8]))
+        self.assertRaises(ValueError,jiggle_effect.pack,self.art,self.depth,dict(c,top_pin=c['bottom_pin']))
 
     def test_springs_settle_without_a_sine_animation(self):
         solver=Solver();motion=dict(position=np.zeros(3),velocity=np.zeros(3),rotation=np.array([0,0,0,1]))

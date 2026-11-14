@@ -27,9 +27,13 @@ reskate.on('tick',function()
  if scope and scope~=target then clear() end
  local pose=nil
  local motion=nil
+ local params=nil
  if target=='preview' then
   pose=reskate.room.pose('board')
-  if not pose or pose.age>.2 then clear();report('Waiting for the native preview board.');return end
+  -- Warm material discovery even before a pose is available. Both native readers
+  -- request preview observation; never let one missing sample gate the other.
+  params=reskate.board.parameters('deck',target)
+  if not pose then clear();report('Waiting for the native preview board.');return end
   local now=reskate.time.now();local dt=lastTime and (now-lastTime)/1000 or 0
   local velocity=(lastPosition and dt>0 and dt<.12) and (pose.position-lastPosition)/dt or V(0,0,0)
   motion={deck={position=pose.position,rotation=pose.rotation},velocity=velocity}
@@ -37,7 +41,7 @@ reskate.on('tick',function()
   motion=reskate.board.motion()
   if not motion or not motion.deck or not motion.velocity then clear();report('Waiting for the equipped board.');return end
  end
- local params=reskate.board.parameters('deck',target)
+ params=params or reskate.board.parameters('deck',target)
  local values={}
  for _,p in params or {} do values[p.key]=p.value end
  local authored=values['94c9dcae6acf67da']

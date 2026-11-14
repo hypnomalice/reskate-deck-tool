@@ -17,21 +17,28 @@ def check_digital(folder):
         mask=folder/'jiggle-mask.png';im=Image.new('L',(512,2048));ImageDraw.Draw(im).ellipse((90,700,420,1400),fill=255);im.save(mask)
         jiggle=dict(name='Bundled springs',mode='jiggle',images=[str(image),str(image)],jiggle=dict(mask=str(mask),amount=72,stiffness=43,attachment='both'))
         projects.append(jiggle)
+        import copy
+        layered=copy.deepcopy(jiggle);layered['name']='Bundled layered springs'
+        layered['jiggle'].update(foreground_mask=str(mask),cutout_mask=str(mask),background_image=str(image))
+        projects.append(layered)
         output=engine.export_pack(projects,folder/'Digital checks.fbmod',shared_runtime=True)
         from fbmod_compat import Archive
         a=Archive(output.read_bytes())
         assert a.find(2,'characters/lua/skaterboardlualoaderasset') is not None
         crystal=next(p for p in projects if p['mode']=='crystal')
-        crystal['crystal']=dict(tint='#9474d2',cuts=48,grip_tape=True)
+        crystal['crystal']=dict(tint='#9474d2',cuts=140,grip_tape=True)
         import crystal_finish
         assert AtlasPreview(crystal_finish.pack(Image.open(image),crystal['crystal']),'crystal').render(.4).size==(210,840)
         import jiggle_effect,jiggle_physics
         assert AtlasPreview(jiggle_effect.pack(Image.open(image),Image.open(image),jiggle['jiggle']),'jiggle').render(.4).size==(210,840)
+        layered_atlas=jiggle_effect.pack(Image.open(image),Image.open(image),layered['jiggle'])
+        assert layered_atlas.size==(2048,4096)
+        assert AtlasPreview(layered_atlas,'jiggle').render(.4).size==(210,840)
         native=False
         if (folder/'compile-config.json').exists():
             import native_export
             setup=json.loads((folder/'compile-config.json').read_text())
-            native_export.export_folder([crystal,jiggle],folder/'Bundled crystal and springs native',title='Bundled crystal and springs native',**setup)
+            native_export.export_folder([crystal,jiggle,layered],folder/'Bundled crystal and springs native',title='Bundled crystal and springs native',**setup)
             native=True
         report=dict(ok=True,bundled_helper=True,mixed_export=True,crystal_preview=True,jiggle_preview=True,native_compile=native)
     except Exception:
@@ -156,17 +163,11 @@ def check(folder):
         runtime_folder.mkdir(exist_ok=True)
         content_path = runtime_folder / 'Content.fbmod'
         write_runtime_export(new_output.read_bytes(), content_path, overwrite=True)
-        core = Archive((runtime_folder / (RUNTIME_NAME+'.fbmod')).read_bytes())
-        core_keys = {core.key(i) for i in range(len(core.blobs))}
-        assert len(core_keys) == 22 and not core_keys & COMPOSITOR
-        assert core.find(2, 'shaders/bytecode/c6d7fd6d-42ea-3ad2-2d72-1e04a029fc90') is not None
-        core_lua = unpack(core.blobs[core.find(2, 'characters/lua/luaskateboardcompositor')])
-        assert b'deck:addBundleRef(emptyTexture)' in core_lua
+        assert not (runtime_folder/(RUNTIME_NAME+'.zip')).exists()
+        assert not (runtime_folder/(RUNTIME_NAME+'.fbmod')).exists()
         content = Archive(content_path.read_bytes())
         assert not any(content.key(i)[1].startswith('shaders/bytecode/') for i in range(len(content.blobs)))
-        report['shared_runtime'] = dict(resources=20, native_compositor=True,
-                                       owned_background=True, scoped_foil=True,
-                                       output=str(runtime_folder))
+        report['shared_runtime'] = dict(separate_install_required=True,output=str(runtime_folder))
         import layer_atlas
         foreground=folder/'Parallax Foreground.png';middle=folder/'Parallax Middle.png'
         Image.new('RGBA',(512,2048),(255,0,0,128)).save(foreground)

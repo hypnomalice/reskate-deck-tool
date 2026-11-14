@@ -18,6 +18,9 @@ class AtlasPreview:
     def __init__(self, atlas, mode):
         self.pixels = linear(atlas.convert('RGB'))
         self.alpha = np.asarray(atlas.convert('RGBA').getchannel('A'),dtype=np.float32)/255
+        if mode=='jiggle' and atlas.size==(2048,4096):
+            self.layer_pixels=np.stack(tuple(self.pixels[:,i*512:(i+1)*512] for i in range(3)),axis=0)
+            self.pixels=self.layer_pixels[0];self.alpha=self.alpha[:,:512]
         self.mode = mode
         self.height, self.width = self.pixels.shape[:2]
         self.settings = self.sample(.125, 56 / 4096)

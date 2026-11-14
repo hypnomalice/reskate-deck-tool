@@ -27,8 +27,13 @@ class MaskTests(unittest.TestCase):
         app=QApplication.instance() or QApplication([])
         with patch.object(Creator,'check_updates',lambda self:None):window=Creator()
         window.decks[0].update(mode='case',effect_chosen=True,case={'screw_mask':'screws.png','detail_mask':'details.png'})
-        window.apply_deck();window.case_haze.spin.setValue(42);result=window.workspace()['decks'][0]['case']
+        window.apply_deck();window.transparency_controls['haze'].spin.setValue(66);result=window.workspace()['decks'][0]['case']
         self.assertEqual(result['screw_mask'],'screws.png');self.assertEqual(result['detail_mask'],'details.png')
-        window.clear_case_mask('screw_mask');self.assertIsNone(window.workspace()['decks'][0]['case']['screw_mask'])
+        self.assertEqual(result['haze'],.66)
+        window.transparency_migrate.click();result=window.workspace()['decks'][0]['case']
+        self.assertIsNone(result['screw_mask']);self.assertIsNone(result['detail_mask'])
+        self.assertEqual(result['legacy_masks'],dict(screw_mask='screws.png',detail_mask='details.png'))
+        window.decks[0].update(mode='crystal',crystal=dict(cuts=48));window.apply_deck();window.transparency_migrate.click()
+        result=window.workspace()['decks'][0]['crystal'];self.assertEqual(result['cuts'],140);self.assertEqual(result['legacy_cuts'],48)
         window.preview_timer.stop();window.poll_timer.stop();window.animation_timer.stop();window.baseline=window.workspace();window.close()
 if __name__=='__main__':unittest.main()

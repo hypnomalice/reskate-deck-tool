@@ -7,19 +7,22 @@ import jiggle_effect
 
 
 
-def attach(data,names):
+def attach(data,names,layered_names=()):
     if not names:return data
     import eink_mesh
     data=eink_mesh._attach(data,names,'glitch-opaque-mesh.fbmod',is_glitch=True)
     data=eink_mesh.equipped_grip(data,names)
-    a=Archive(data);tokens=[]
+    a=Archive(data);tokens=[];layered_tokens=[]
     for name in names:
         tokens.extend([uuid.uuid5(uuid.NAMESPACE_URL,'reskate/lenticular/deck/'+name.casefold()).hex,
                        uuid.uuid5(uuid.NAMESPACE_URL,'sdec/eink-rim/'+name.casefold()).hex])
+    for name in layered_names:
+        layered_tokens.extend([uuid.uuid5(uuid.NAMESPACE_URL,'reskate/lenticular/deck/'+name.casefold()).hex,uuid.uuid5(uuid.NAMESPACE_URL,'sdec/eink-rim/'+name.casefold()).hex])
     for i,d in enumerate(a.descriptors):
         kind,name=a.key(i)
         if kind not in (1,2) or not any(token in name for token in tokens):continue
         raw=unpack(a.blobs[i]);updated=raw.replace(struct.pack('<Q',5194086253280732641),struct.pack('<Q',jiggle_effect.MATERIAL_KEY))
+        if any(token in name for token in layered_tokens):updated=updated.replace(struct.pack('<Q',jiggle_effect.MATERIAL_KEY),struct.pack('<Q',jiggle_effect.LAYERED_KEY))
         if updated!=raw:
             desc,payload=resource({'descriptor':bytes(d).hex()},i,name,updated,pack);a.descriptors[i]=bytearray(desc);a.blobs[i]=payload
     return a.bytes()

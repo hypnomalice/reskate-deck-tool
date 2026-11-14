@@ -1,17 +1,18 @@
-# ReSkate Deck Tool 1.7.0
+# ReSkate Deck Tool 1.8.0
 
 Create effect decks and export them as installable mod ZIPs, directly to your game, or as FBMODs.
 
-- **Artwork Springs:** use artwork, an optional depth map and a white-on-black jiggle mask. Tune amount, stiffness, depth, top/both attachments and fixed points. The close-up and **Tilt and release** test help judge movement and settling. Settings are saved in the deck; SDEC runs the shared controller.
-- **Crystal:** tune tint, cut density and optional equipped grip tape.
-- Faster spring previews use the same spring equations and inverse texture warp as the native effect. Delayed rendering no longer resets the springs. Lighting and deck geometry remain approximate.
-- Native exports retain the shared-core loader path and private material registrations. Artwork Springs uses its authored atlas without donor surface patterns.
+- **Glass:** a separate material option with display-glass and animated water finishes, tint, reflection, refraction and strength controls.
+- **Clear Case:** retains frosted/glossy plastic, embedded artwork or a PCB interior, haze, surface detail and hardware openings.
+- **Crystal:** retains cut crystal with irregular facets and embedded artwork.
+- **Layered Artwork Springs:** supports fixed background, moving artwork and foreground layers, alongside the existing spring controls.
+- Fixes missing exported decks by retaining each pack's inventory registration alongside its authored material routes.
 
-**Crystal and Artwork Springs require SDEC 3.1.0 or newer**, installed separately and enabled first in the mod list. Keep only one core enabled. Native preview jiggle requires **ReSkate 2.1.4-5 Hotfix or newer**, containing [PR #467](https://github.com/Dingo-Shenanigans/ReSkate/pull/467). No custom DLL is needed on that release.
+Install **SDEC 3.3.0 separately** and keep one copy enabled first in the mod list. SDEC is not bundled in the tool or deck exports. The editor's bottom link opens the [SDEC download page](https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/).
 
-For ZIP/direct exports, select a shader-capable Studio command-line compiler in File > Export setup. It must support `--board-loader-from-core`; the compiler is not bundled or downloaded.
+ZIP/direct installation still requires a separately installed shader-capable Studio compiler supporting `--board-loader-from-core`. No custom ReSkate runtime is needed for the transparency finishes. Preview lighting and geometry are approximate.
 
-See [1.7.0 controls and release notes](docs/release-1.7.0.md) and [source build instructions](docs/build-windows.md).
+See [1.8.0 release notes](docs/release-1.8.0.md) and [source build instructions](docs/build-windows.md).
 
 ## 1.6.6 — previous release
 

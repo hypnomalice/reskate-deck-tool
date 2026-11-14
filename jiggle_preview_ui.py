@@ -2,15 +2,24 @@
 import math,time
 import numpy as np
 from PySide6.QtCore import Qt,QTimer
-from PySide6.QtWidgets import QGroupBox,QVBoxLayout,QHBoxLayout,QLabel,QPushButton
+from PySide6.QtWidgets import QGroupBox,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,QComboBox,QCheckBox,QToolButton
 from PySide6.QtGui import QPixmap
 import jiggle_physics,jiggle_effect
 
 def install(owner,right):
     box=QGroupBox('Moving area · close-up');layout=QVBoxLayout(box)
+    overlay=QCheckBox('Show masks');layout.addWidget(overlay)
+    advanced=QToolButton();advanced.setText('Advanced · inspect layer');advanced.setCheckable(True);advanced.setArrowType(Qt.RightArrow);advanced.setToolButtonStyle(Qt.ToolButtonTextBesideIcon);layout.addWidget(advanced)
+    view=QComboBox();view.addItems(['Combined','Foreground','Moving artwork','Background']);layout.addWidget(view);view.hide()
+    def inspect(value):
+        view.setVisible(value);advanced.setArrowType(Qt.DownArrow if value else Qt.RightArrow)
+        if not value:view.setCurrentIndex(0)
+    advanced.toggled.connect(inspect)
+    owner.spring_layer_view=view;owner.spring_mask_overlay=overlay
+    view.currentIndexChanged.connect(owner.render);overlay.toggled.connect(owner.render)
     image=QLabel('Choose artwork and a jiggle mask');image.setAlignment(Qt.AlignCenter);image.setMinimumSize(280,210)
     layout.addWidget(image,1);row=QHBoxLayout()
-    for text,action in [('Tilt and release',lambda:setattr(owner,'spring_demo',time.monotonic())),('Stop moving',lambda:setattr(owner,'spring_demo',None))]:
+    for text,action in [('Move → Release',lambda:setattr(owner,'spring_demo',time.monotonic())),('Stop moving',lambda:setattr(owner,'spring_demo',None))]:
         button=QPushButton(text);button.clicked.connect(action);row.addWidget(button)
     layout.addLayout(row)
     label=QLabel('Same movement as the board, enlarged. Drag the board or test a tilt; release and watch it settle.');label.setWordWrap(True);layout.addWidget(label)

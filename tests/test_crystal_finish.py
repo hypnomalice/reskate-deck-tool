@@ -30,10 +30,12 @@ class CrystalTests(unittest.TestCase):
   with patch.object(Creator,'check_updates',lambda self:None):w=Creator()
   try:
    w.decks[0].update(mode='crystal',effect_chosen=True,crystal=dict(tint='#a382e6',cuts=64,grip_tape=True));w.apply_deck();w.show();w.inspector_tabs.setCurrentIndex(1);app.processEvents()
-   self.assertTrue(w.crystal_box.isVisible());self.assertFalse(w.case_box.isVisible())
-   w.crystal_cuts.spin.setValue(230);w.crystal_grip.setChecked(False)
-   cfg=w.workspace()['decks'][0]['crystal'];self.assertEqual(cfg,dict(tint='#a382e6',cuts=230,grip_tape=False))
-   w.apply_deck();self.assertEqual(w.crystal_cuts.value(),230)
-   w.decks[0]['mode']='case';w.apply_deck();app.processEvents();self.assertFalse(w.crystal_box.isVisible());self.assertTrue(w.case_box.isVisible())
+   self.assertTrue(w.transparency_box.isVisible());self.assertFalse(w.case_box.isVisible())
+   w.transparency_controls['reflection_strength'].spin.setValue(168);w.transparency_grip.setChecked(False)
+   cfg=w.workspace()['decks'][0]['crystal'];self.assertEqual(cfg['tint'],'#a382e6');self.assertEqual(cfg['cuts'],64);self.assertFalse(cfg['grip_tape']);self.assertEqual(cfg['reflection_strength'],1.68)
+   w.transparency_migrate.click();cfg=w.workspace()['decks'][0]['crystal'];self.assertEqual(cfg['cuts'],140);self.assertEqual(cfg['legacy_cuts'],64)
+   w.apply_deck();self.assertEqual(w.transparency_controls['reflection_strength'].value(),168)
+   preserved=dict(cfg);w.decks[0]['mode']='case';w.apply_deck();app.processEvents();self.assertTrue(w.transparency_box.isVisible());self.assertFalse(w.crystal_box.isVisible());self.assertEqual(w.workspace()['decks'][0]['crystal'],preserved)
+
   finally:
    w.preview_timer.stop();w.poll_timer.stop();w.animation_timer.stop();w.baseline=w.workspace();w.close()

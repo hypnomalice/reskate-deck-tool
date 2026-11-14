@@ -98,11 +98,13 @@ def lossless_archive(data,atlases):
     for i in range(len(a.blobs)):
         if a.key(i)[0]!=2:continue
         raw=unpack(a.blobs[i])
-        if len(raw) not in (144,180) or struct.unpack_from('<HH',raw,22)!=(512,4096):continue
+        if len(raw) not in (144,180) or struct.unpack_from('<HH',raw,22) not in ((512,4096),(2048,4096)):continue
         chunk=a.find(3,str(uuid.UUID(bytes_le=raw[40:56])))
         if chunk is None:continue
         key=hashlib.sha256(unpack(a.blobs[chunk])).hexdigest()
         if key not in atlases:continue
+        if struct.unpack_from('<HH',raw,22)!=atlases[key].size:
+            raise ValueError('Artwork atlas dimensions differ from its texture header.')
         payload,sizes=mip_payload(atlases[key]);header=bytearray(raw)
         struct.pack_into('<I',header,12,20)
         struct.pack_into('<H',header,20,struct.unpack_from('<H',header,20)[0]&~8)

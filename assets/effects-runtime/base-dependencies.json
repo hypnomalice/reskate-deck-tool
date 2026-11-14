@@ -1,0 +1,101 @@
+{
+  "source": "Base-game entries resolved from the confirmed working native core",
+  "resources": {
+    "expressionshader/permutationshareddata/4544057382222645565": {
+      "decoded_sha1": "62a6fdd529659ae80ce7214f3a56f4b60f53c66a",
+      "bytes": 252
+    },
+    "expressionshader/inputlayout/2716939230410418185": {
+      "decoded_sha1": "ef9c8c0b63378f6ff59019162c38b79f07622272",
+      "bytes": 88
+    },
+    "expressionshader/bindingset/15607710419488493466": {
+      "decoded_sha1": "9293ac87fc9589fd2ddf23da71bf2d6b3c40a9c1",
+      "bytes": 820
+    },
+    "expressionshader/bindingset/3597085763448490183": {
+      "decoded_sha1": "6d0f1691fe70e8db85988c601135dbd22d6e29ba",
+      "bytes": 580
+    },
+    "expressionshader/permutationshareddata/14937333338059297517": {
+      "decoded_sha1": "b3c77de3cc7b2c5bc4bd19dbd005e6b3c9270065",
+      "bytes": 252
+    },
+    "expressionshader/bindingsignature/6134639044945407584": {
+      "decoded_sha1": "cc09f3d38941936b2261d7e5ee98db39f6001fde",
+      "bytes": 272
+    },
+    "expressionshader/bindingset/15189272767799486523": {
+      "decoded_sha1": "b601024dfc4b42157aaff1f880fbd3be8f59034f",
+      "bytes": 164
+    },
+    "expressionshader/inputlayout/11152549358718046305": {
+      "decoded_sha1": "f8a75d36cd4f61b53cfc47388ae0106b10786b8e",
+      "bytes": 136
+    },
+    "expressionshader/bindingset/14137980366495223483": {
+      "decoded_sha1": "84d71e38e8c57d188eb3ddd51d4f224ba161aa0e",
+      "bytes": 148
+    },
+    "expressionshader/permutationshareddata/15989698608293913444": {
+      "decoded_sha1": "abda6a8b93534f30aa1980525ce9e3bb59f82a09",
+      "bytes": 212
+    },
+    "expressionshader/passbinding/14961798410699226648": {
+      "decoded_sha1": "3336a14e07ee261acedf96d2009203933bbef877",
+      "bytes": 3828
+    },
+    "expressionshader/inputlayout/15520101909464279947": {
+      "decoded_sha1": "99b743a687b93dfdda3539dd627d8badce47d44a",
+      "bytes": 120
+    },
+    "expressionshader/bindingset/17877512306765436691": {
+      "decoded_sha1": "53f0676830825c690d69700cfce14df64e105a8e",
+      "bytes": 340
+    },
+    "expressionshader/inputlayout/2377702306151678228": {
+      "decoded_sha1": "6bdddec524fbd1fad15fdbaa2641ce8bf1e80637",
+      "bytes": 184
+    },
+    "expressionshader/permutationshareddata/16353200918130753465": {
+      "decoded_sha1": "e47977ea294a519dba1229bef1609266599f4b56",
+      "bytes": 252
+    },
+    "expressionshader/passbinding/14961798414840856876": {
+      "decoded_sha1": "238943ad38bfd489f5e12d4d14f0d92b6f3ad39f",
+      "bytes": 5908
+    },
+    "expressionshader/rootslotinitdata/8971847463084794503": {
+      "decoded_sha1": "9b8fa6f694b9a57bc6ab8e5402a937c4a2b21643",
+      "bytes": 160
+    },
+    "expressionshader/bindingset/1338913344384487326": {
+      "decoded_sha1": "7ecc1639d456c2779c75b17c1a7d185ba859e90d",
+      "bytes": 340
+    },
+    "shaders/bytecode/dc659fac-dd01-1aab-5630-d7e7826a4b2b": {
+      "decoded_sha1": "7384cb95cc97a160908a95e1eb9587ba66c4d094",
+      "bytes": 4968
+    },
+    "expressionshader/rootslotinitdata/9381610716540720576": {
+      "decoded_sha1": "48e7e7be2ea1011fad2640898296d4d663c1d244",
+      "bytes": 160
+    },
+    "expressionshader/permutationshareddata/2562046080401257718": {
+      "decoded_sha1": "8a5738b61d3d7b8e15fe56915a0072c0d001a6ed",
+      "bytes": 252
+    },
+    "expressionshader/bindingset/15451464642122734753": {
+      "decoded_sha1": "c0635711e208be08da822dbbef064d4c48abb525",
+      "bytes": 340
+    },
+    "shaders/bytecode/ed76f44a-18b9-d22c-d5d7-0df39676a0a0": {
+      "decoded_sha1": "9c5cfc2e8aa301afc2d7dc5986e6dbe5b001d5b8",
+      "bytes": 7176
+    },
+    "expressionshader/rootslotinitdata/14183746609735141392": {
+      "decoded_sha1": "7ee725c01de59cb3ee6608aa82c07a49c4bdf2fc",
+      "bytes": 160
+    }
+  }
+}

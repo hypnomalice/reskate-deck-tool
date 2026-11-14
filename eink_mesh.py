@@ -45,7 +45,7 @@ def attach(data, names, glitch_names=(), *, shared_runtime=False, case_names=(),
     if grip_names:data=equipped_grip(data,[name for name in grip_names if name in cases])
     return data
 
-def _attach(data,names,seed_file,is_glitch=False,is_case=False):
+def _attach(data,names,seed_file,is_glitch=False,is_case=False,*,extra_indices=()):
     a=Archive(data);seed=Archive((Path(__file__).parent/'assets'/seed_file).read_bytes())
     seed_identity=seed.key(13)[1].rsplit('/',1)[-1].removesuffix('_mesh')
     source_key=struct.unpack_from('<Q',unpack(seed.blobs[20]),16)[0]
@@ -70,7 +70,7 @@ def _attach(data,names,seed_file,is_glitch=False,is_case=False):
                     cur+=nv*stride
             seed.replace(ci,raw)
     def rid(ar,i):return struct.unpack_from('<Q',ar.descriptors[i],descriptor_parts(ar.descriptors[i])[2]+4)[0]
-    selected=([4,5,6] if is_glitch or is_case else [])+[i for i in range(10,26) if i!=20]
+    selected=([4,5,6] if is_glitch or is_case else [])+[i for i in range(10,26) if i!=20]+list(extra_indices)
     registration_pairs=[]
     for title in names:
         ns=uuid.uuid5(uuid.NAMESPACE_URL,'sdec/eink-rim/'+title.casefold())

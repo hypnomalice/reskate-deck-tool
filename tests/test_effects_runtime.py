@@ -14,6 +14,20 @@ def resources(data):
 
 
 class RuntimeTests(unittest.TestCase):
+    def test_content_registers_authored_items_in_inventory(self):
+        from fbmod_compat import unpack
+        from ebx_tools import Ebx
+        content, _, _ = split_pack(self.original, include_runtime=False)
+        records = resources(content)
+        items = [Ebx(unpack(raw)) for (kind, name), raw in records.items()
+                 if kind == 1 and name.startswith('items/board_bottomart/')]
+        collections = [Ebx(unpack(raw)) for (kind, name), raw in records.items()
+                       if kind == 1 and name.endswith('_itemcollection')]
+        self.assertTrue(items)
+        self.assertTrue(collections)
+        for item in items:
+            self.assertTrue(any(item.f[:16] + item.data[:16] in c.imports for c in collections))
+
     def test_content_retains_the_material_routes_its_recipes_require(self):
         import struct
         from fbmod_compat import unpack
@@ -50,20 +64,33 @@ class RuntimeTests(unittest.TestCase):
         normalized, _ = compatible(self.original)
         left, right = resources(content), resources(runtime)
         overlap = left.keys() & right.keys()
-        self.assertTrue(all('_bundlereftable' in name or '_shaderstate_' in name for _, name in overlap))
+        self.assertTrue(all('_bundlereftable' in name or ('_shaderstate_' in name or name.endswith('_itemcollection')) for _, name in overlap))
         self.assertEqual(left, {key: value for key, value in resources(normalized).items()
-                                if key not in shared_keys() or '_shaderstate_' in key[1]})
+                                if key not in shared_keys() or ('_shaderstate_' in key[1] or key[1].endswith('_itemcollection'))})
         self.assertEqual(right, resources(build_runtime()))
-        self.assertTrue(all('_shaderstate_' in name for _,name in left.keys() & shared_keys()))
+        self.assertTrue(all(('_shaderstate_' in name or name.endswith('_itemcollection')) for _,name in left.keys() & shared_keys()))
         self.assertTrue(all(key in shared_keys() or '_bundlereftable' in key[1] for key in right))
         self.assertEqual(contract['abi'], ABI)
         self.assertFalse(contract['third_party_compatibility_verified'])
 
-    def test_runtime_contains_no_deck_items_or_private_materials(self):
+    def test_runtime_keeps_fixed_loader_assets_but_not_the_authored_fixture(self):
         _, runtime, _ = split_pack(self.original)
-        for _, name in resources(runtime):
-            self.assertFalse(name.startswith('items/board_bottomart/'))
-            self.assertFalse(name.startswith('characters/maincharacters/reskate/shaders/'))
+        keys=resources(runtime)
+        self.assertIn((1,'items/board_bottomart/own_lenticular_95ff40e6bbdc52bb8939fb789615e1ad'),keys)
+        authored={key for key in resources(self.original) if key[1].startswith('items/board_bottomart/')}
+        self.assertFalse(authored & keys.keys())
+
+    def test_runtime_payloads_are_valid_native_archive_streams(self):
+        import struct
+        from effects_runtime import _runtime_updates
+        from fbmod_compat import unpack
+        from deck_archive import descriptor_parts
+        for record,payload in _runtime_updates():
+            with self.subTest(resource=(record['kind'],record['name'])):
+                raw=unpack(payload)
+                descriptor=bytes.fromhex(record['descriptor'])
+                sha,_,_=descriptor_parts(descriptor)
+                self.assertEqual(len(raw),struct.unpack_from('<Q',descriptor,sha+20)[0])
 
     def test_runtime_preserves_native_compositor_and_owns_background(self):
         from fbmod_compat import unpack
@@ -83,7 +110,7 @@ class RuntimeTests(unittest.TestCase):
     def test_migration_keeps_original_and_rejects_overwrite(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            source, content, runtime = (root / n for n in ('old.fbmod', 'content.fbmod', 'runtime.fbmod'))
+            source, content, runtime = (root / n for n in ('old.fbmod', 'content.fbmod', 'runtime.zip'))
             source.write_bytes(self.original)
             migrate_file(source, content, runtime)
             before = content.read_bytes()
@@ -91,15 +118,16 @@ class RuntimeTests(unittest.TestCase):
                 migrate_file(source, content, runtime)
             self.assertEqual(source.read_bytes(), self.original)
             self.assertEqual(content.read_bytes(), before)
+            self.assertFalse(runtime.exists())
 
     def test_runtime_is_deterministic_and_can_be_reused(self):
         self.assertEqual(build_runtime(), build_runtime())
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             write_runtime_export(self.original, root/'one.fbmod')
-            first = (root/(RUNTIME_NAME+'.fbmod')).read_bytes()
+            self.assertFalse((root/(RUNTIME_NAME+'.zip')).exists())
             write_runtime_export(self.original, root/'two.fbmod')
-            self.assertEqual((root/(RUNTIME_NAME+'.fbmod')).read_bytes(), first)
+            self.assertFalse((root/(RUNTIME_NAME+'.zip')).exists())
             self.assertEqual((root/'one.fbmod').read_bytes(), (root/'two.fbmod').read_bytes())
 
     def test_content_export_writes_only_the_deck_and_preserves_original(self):
@@ -109,13 +137,13 @@ class RuntimeTests(unittest.TestCase):
             contract=write_content_export(self.original,target)
             self.assertEqual(list(root.iterdir()),[target])
             content=resources(target.read_bytes())
-            self.assertTrue(all('_shaderstate_' in name for _,name in content.keys() & shared_keys()))
+            self.assertTrue(all(('_shaderstate_' in name or name.endswith('_itemcollection')) for _,name in content.keys() & shared_keys()))
             self.assertIn('neon-mask',contract['runtime_features'])
             before=target.read_bytes()
             with self.assertRaises(FileExistsError):write_content_export(self.original,target)
             self.assertEqual(target.read_bytes(),before)
 
-    def test_failed_export_rolls_back_previously_committed_files(self):
+    def test_failed_content_export_preserves_previous_file_and_exports_no_core(self):
         import os
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -123,7 +151,7 @@ class RuntimeTests(unittest.TestCase):
             destination.write_bytes(b'previous export')
             original_replace = os.replace
             def fail_contract(source, target):
-                if Path(target).suffix == '.json':
+                if Path(target)==destination:
                     raise OSError('Simulated disk failure')
                 return original_replace(source, target)
             with patch('effects_runtime.os.replace', side_effect=fail_contract):

@@ -13,3 +13,5 @@ dist/
 last-error.txt
 
 assets/jiggle-runtime/jiggle_preview.dll
+
+!assets/transparency/*.fbmod

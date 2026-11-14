@@ -17,7 +17,7 @@ for folder in (engine, engine / 'depth-template'):
                  (str(folder / 'template-manifest.json'), relative)])
 a = Analysis([str(root / 'Lenticular Deck Creator.pyw')],
     pathex=[str(root), str(engine)], binaries=collect_dynamic_libs('onnxruntime'),
-    datas=data, hiddenimports=['onnxruntime.capi.onnxruntime_pybind11_state','jiggle_ui','jiggle_effect','jiggle_physics','jiggle_native','jiggle_preview','jiggle_preview_ui'],
+    datas=data, hiddenimports=['transparency_check','transparency_preview','transparency_ui','transparency_native','transparency_finish','onnxruntime.capi.onnxruntime_pybind11_state','jiggle_ui','jiggle_effect','jiggle_physics','jiggle_native','jiggle_preview','jiggle_preview_ui','jiggle_layers'],
     excludes=['gemstone_study','pandas', 'matplotlib', 'onnxruntime.transformers', 'onnxruntime.quantization'])
 
 # Package only the selected runtime, not archived development shader payloads.
@@ -25,10 +25,14 @@ a.datas=[(dest,source,kind) for dest,source,kind in a.datas
          if not dest.replace('\\','/').startswith('assets/jiggle-runtime/')
          or Path(dest.replace('\\','/')).name != 'controller.lua']
 
-runtime_files={'manifest.json'} | {r['file'] for r in json.loads((root/'assets/effects-runtime/manifest.json').read_text())}
+# Keep only the dependency catalogue needed to separate deck content.
+# The SDEC core and its resource payloads are distributed separately.
+runtime_files={'manifest.json','base-dependencies.json'}
 a.datas=[(dest,source,kind) for dest,source,kind in a.datas
          if not dest.replace('\\','/').startswith('assets/effects-runtime/')
          or Path(dest.replace('\\','/')).name in runtime_files]
+
+a.datas=[row for row in a.datas if not row[0].replace('\\','/').startswith('assets/runtime-bundle/')]
 
 # Qt needs its matching C++ runtime; another image library can supply an older copy.
 qt = Path(PySide6.__file__).parent

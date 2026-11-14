@@ -23,6 +23,7 @@ def patch_pixel(source,IR,graphic_register):
  top_x=ir.mul(top_pin[0],512);top_y=ir.mul(top_pin[1],2048)
  bottom_x=ir.mul(bottom_pin[0],512);bottom_y=ir.mul(bottom_pin[1],2048)
  split=ir.mul(bottom_pin[2],512)
+ ax=ir.sub(bottom_x,top_x);ay=ir.sub(bottom_y,top_y);length=ir.maximum(ir.unary(24,ir.add(ir.mul(ax,ax),ir.mul(ay,ay))),1);ax=ir.div(ax,length);ay=ir.div(ay,length);centre_y=ir.mul(ir.add(top_y,bottom_y),.5)
 
  def smooth(v):
   t=ir.sat(v);return ir.mul(ir.mul(t,t),ir.sub(3,ir.mul(2,t)))
@@ -36,10 +37,10 @@ def patch_pixel(source,IR,graphic_register):
   def pin_distance(px,py):
    dx=ir.sub(qx,px);dy=ir.sub(qy,py)
    return ir.unary(24,ir.add(ir.mul(dx,dx),ir.mul(dy,dy)))
-  top=ir.mul(smooth(ir.div(ir.sub(qy,top_y),70)),smooth(ir.div(pin_distance(top_x,top_y),radius)))
-  bottom=ir.mul(smooth(ir.div(ir.sub(bottom_y,qy),60)),smooth(ir.div(pin_distance(bottom_x,bottom_y),radius)))
+  top=ir.mul(smooth(ir.div(ir.add(ir.mul(ir.sub(qx,top_x),ax),ir.mul(ir.sub(qy,top_y),ay)),70)),smooth(ir.div(pin_distance(top_x,top_y),radius)))
+  bottom=ir.mul(smooth(ir.div(ir.add(ir.mul(ir.sub(bottom_x,qx),ax),ir.mul(ir.sub(bottom_y,qy),ay)),60)),smooth(ir.div(pin_distance(bottom_x,bottom_y),radius)))
   mask=ir.mul(mask,ir.mul(top,ir.select(both,bottom,1)))
-  blend=smooth(ir.div(ir.sub(qx,ir.sub(split,20)),40))
+  blend=smooth(ir.div(ir.add(ir.sub(ir.mul(ir.sub(qx,split),ay),ir.mul(ir.sub(qy,centre_y),ax)),20),40))
   dx=ir.mul(mask,ir.add(masses[0][0],ir.mul(blend,ir.sub(masses[1][0],masses[0][0]))))
   dy=ir.mul(mask,ir.add(masses[0][1],ir.mul(blend,ir.sub(masses[1][1],masses[0][1]))))
   qx=ir.add(qx,ir.mul(ir.sub(tx,ir.add(qx,dx)),.7));qy=ir.add(qy,ir.mul(ir.sub(ty,ir.add(qy,dy)),.7))

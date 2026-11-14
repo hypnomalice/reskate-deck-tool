@@ -55,7 +55,7 @@ def encode_thumbnail(im):
 
 
 def encode(im,progress=lambda message:None,*,profile='slow',mipmaps=True):
-    if im.size not in [(512,4096),(1024,8192),(2048,16384)]:
+    if im.size not in [(512,4096),(2048,4096),(1024,8192),(2048,16384)]:
         raise ValueError('Unsupported deck atlas dimensions.')
     import texture_compression
     return texture_compression.encode(im,progress,profile=profile,mipmaps=mipmaps)
@@ -124,10 +124,12 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
             project['mode']='ghost';project.setdefault('cd',{})['enabled']=True
     with tempfile.TemporaryDirectory(prefix='lenticular-framing-') as scratch:
         for number, project in enumerate(projects):
-            if project.get('mode') in ('case','crystal'):
-                import case_finish
-                project['wood_tint']=(__import__('crystal_finish').settings(project.get('crystal')) if project.get('mode')=='crystal' else case_finish.settings(project.get('case')))['tint']
-                project['wood_intensity']=1
+            if project.get('mode') in ('glass','case','crystal'):
+                import transparency_finish
+                mode=project['mode'];project[mode]=transparency_finish.settings(mode,project.get(mode))
+                # The native shell supplies the edge. An opaque wood texture is
+                # neither a backing for contained artwork nor a glass parameter.
+                project.pop('wood_tint',None)
             originals = project['images']
             normal=project.get('cd',{}).get('normal')
             if normal and normal.get('path') and normal.get('style','custom')=='custom':
@@ -173,6 +175,9 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
                 import jiggle_effect
                 cfg=jiggle_effect.settings(project.get('jiggle'))
                 mask=jiggle_effect.mask_image(cfg,project.get('fit','Stretch'),(project.get('placement') or [{}])[0])
+                import jiggle_layers
+                for key,layer in jiggle_layers.images(cfg,project.get('fit','Stretch'),(project.get('placement') or [{}])[0],project.get('background','#ffffff')).items():
+                    target=Path(scratch)/f'{number}-jiggle-{key}.png';layer.save(target);cfg[key]=str(target)
                 target=Path(scratch)/f'{number}-jiggle-mask.png';mask.save(target);cfg['mask']=str(target);project['jiggle']=cfg
                 if project.get('placement'):project['placement'][1]=dict(project['placement'][0])
             placements = project.get('placement')
@@ -183,7 +188,7 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
             if len(placements) != 2:
                 raise ValueError('Two image placements are required.')
             for index, path in enumerate(originals):
-                if not path and project.get('mode') in ('metal','neon','glitch','case','crystal','jiggle') and index==1:
+                if not path and project.get('mode') in ('metal','neon','glitch','glass','case','crystal','jiggle') and index==1:
                     continue
                 fit = background_fit if background_fit and index==1 else project.get('fit','Stretch')
                 image = image_placement.frame(path, fit, project.get('background','#ffffff'),
@@ -209,11 +214,11 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     import surface_finish
     base_encode=globals()['encode']
     def encode(image,progress=lambda message:None,**options):
-        image=image if cd_finish.enabled(project) or project.get('mode') in ('crystal','jiggle') else surface_finish.mark(image,project.get('surface_finish'),mode=project.get('mode'))
+        image=image if cd_finish.enabled(project) or project.get('mode') in ('glass','case','crystal','jiggle') else surface_finish.mark(image,project.get('surface_finish'),mode=project.get('mode'))
         if project.get('mode','classic')=='classic' and project.get('lenticular',True) and not project.get('extra_images') and not cd_finish.enabled(project) and project.get('lenticular_ridges',True):
             import normal_layer
             image=normal_layer.embed_lenticular(image,float(project.get('ridge_strength',.55)))
-        lossless=cd_finish.enabled(project) or surface_finish.smooth_depth(project) or project.get('mode') in ('eink','glitch','case','crystal','jiggle') or (project.get('mode') in ('depth','layers') and surface_finish.settings(project.get('surface_finish'))['holographic'])
+        lossless=cd_finish.enabled(project) or surface_finish.smooth_depth(project) or project.get('mode') in ('eink','glitch','glass','case','crystal','jiggle') or (project.get('mode') in ('depth','layers') and surface_finish.settings(project.get('surface_finish'))['holographic'])
         if lossless:image=image.convert('RGBA')
         if lossless:options['mipmaps']=False
         payload=base_encode(image,progress,**options)
@@ -226,7 +231,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         names.add(name.casefold())
         a,b=project['images'];fit=project.get('fit','Stretch');background=project.get('background','#ffffff');custom=project.get('thumbnail')
         mode=project.get('mode','classic')
-        if mode not in ['classic','depth','layers','gif','ghost','metal','ink','window','liquid','neon','eink','glitch','case','crystal','jiggle']:raise ValueError('Unsupported deck mode.')
+        if mode not in ['classic','depth','layers','gif','ghost','metal','ink','window','liquid','neon','eink','glitch','glass','case','crystal','jiggle']:raise ValueError('Unsupported deck mode.')
         if fit not in ['Stretch','Crop to fill','Fit entire image']:raise ValueError('Choose a supported image sizing option.')
         if dest in [Path(p).resolve() for p in [a,b,custom] if p]+[(ROOT/'engine/template.fbmod').resolve()]:raise ValueError('Choose a separate output file.')
         progress(f'Deck {number} of {len(projects)}: {name}')
@@ -237,18 +242,18 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             packed=jiggle_effect.pack(graphic,depth,project.get('jiggle'))
             texture=encode(packed,progress,mipmaps=False)
             thumb=thumbnail(graphic,graphic,custom,background=background,label='ARTWORK SPRINGS')
-        elif mode=='crystal':
-            import crystal_finish
+        elif mode in ('glass','case','crystal'):
+            import transparency_finish
+            cfg=transparency_finish.settings(mode,project.get(mode))
+            if mode=='case' and (cfg.get('screw_mask') or cfg.get('detail_mask')):
+                raise ValueError('Custom Clear Case masks need migration before native transparency export. Your project and masks are unchanged.')
+            if mode=='crystal' and cfg['cuts']!=140:
+                raise ValueError('Choose the current crystal pattern in Effect settings to export this older project. Its previous cut density remains saved.')
             graphic=artwork(a,fit,background)
-            packed=crystal_finish.pack(graphic,project.get('crystal'))
+            radius=transparency_finish.internal_blur_pixels(mode,cfg)
+            packed=transparency_finish.artwork_atlas(graphic,radius)
             texture=encode(packed,progress,mipmaps=False)
-            thumb=thumbnail(graphic,graphic,custom,background=background,label='CRYSTAL')
-        elif mode=='case':
-            import case_finish
-            graphic=artwork(a,fit,background)
-            packed=case_finish.pack(graphic,project.get('case'))
-            texture=encode(packed,progress,mipmaps=False)
-            thumb=thumbnail(graphic,graphic,custom,background=background,label='CLEAR CASE')
+            thumb=thumbnail(graphic,graphic,custom,background=background,label={'glass':'GLASS','case':'CLEAR CASE','crystal':'CRYSTAL'}[mode])
         elif mode in ('eink','glitch'):
             import digital_finish
             graphic=artwork(a,fit,background);second=artwork(b or a,fit,background)
@@ -341,8 +346,8 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             tinted=Image.merge('RGB',tuple(grain.point([min(255,round(value/average*channel*intensity)) for value in range(256)]) for channel in colour))
             progress('Preparing wood colour texture…')
             wood=b''.join(encode_thumbnail(tinted.resize((max(4,1024>>level),max(4,2048>>level)),Image.Resampling.LANCZOS)) for level in range(12))
-        continuous=surface_finish.smooth_depth(project) or mode in ('ghost','metal','ink','window','liquid','neon','eink','glitch','case','crystal','jiggle') or (mode in ('depth','layers') and surface_finish.settings(project.get('surface_finish'))['holographic']) or (mode=='classic' and bool(project.get('extra_images'))) or (mode=='depth' and not project.get('lenticular',True)) or (mode=='layers' and bool(project.get('middle_image')))
-        decks.append(dict(name=name,mode='depth' if mode=='layers' or (mode=='classic' and project.get('extra_images')) else 'classic' if mode in ('gif','ghost','metal','ink','window','liquid','neon','eink','glitch','case','crystal','jiggle') else mode,texture=texture,texture_size=packed.size if mode=='gif' else (512,4096),texture_mips=1 if mode=='gif' or continuous else None,resident=mode=='gif' or continuous,wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
+        continuous=surface_finish.smooth_depth(project) or mode in ('ghost','metal','ink','window','liquid','neon','eink','glitch','glass','case','crystal','jiggle') or (mode in ('depth','layers') and surface_finish.settings(project.get('surface_finish'))['holographic']) or (mode=='classic' and bool(project.get('extra_images'))) or (mode=='depth' and not project.get('lenticular',True)) or (mode=='layers' and bool(project.get('middle_image')))
+        decks.append(dict(name=name,mode='depth' if mode=='layers' or (mode=='classic' and project.get('extra_images')) else 'classic' if mode in ('gif','ghost','metal','ink','window','liquid','neon','eink','glitch','glass','case','crystal','jiggle') else mode,texture=texture,texture_size=packed.size if mode in ('gif','jiggle') else (512,4096),texture_mips=1 if mode=='gif' or continuous else None,resident=mode=='gif' or continuous,wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
         if mode=='jiggle':decks[-1]['preview_atlas']=packed
     if _texture_only:
         return decks
@@ -352,7 +357,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     from fbmod_compat import compatible
     progress('Applying sticker compatibility…')
     result, _ = compatible(result)
-    case_names=[p['name'] for p in projects if p.get('mode') in ('case','crystal')]
+    case_names=[]  # Native transparency attaches its own approved shell below.
     grip_names=[p['name'] for p in projects if p.get('mode') in ('case','crystal') and p.get(p['mode'],{}).get('grip_tape',False)]
     rim_names=[p['name'] for p in projects if p.get('mode')=='glitch']+case_names
 
@@ -364,7 +369,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             # Compatibility normalization recognizes BC7. Separate the core first,
             # then replace only CD-owned artwork payloads with lossless depth.
             from effects_runtime import split_pack
-            result,_,_=split_pack(result)
+            result,_,_=split_pack(result,include_runtime=False)
             result=cd_finish.lossless_archive(result,cd_atlases)
             temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
         else:write_content_export(result,dest,overwrite=True)
@@ -372,14 +377,18 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             import eink_mesh
             dest.write_bytes(eink_mesh.attach(dest.read_bytes(),rim_names,[p['name'] for p in projects if p.get('mode')=='glitch'],shared_runtime=True,case_names=case_names,grip_names=grip_names))
         import jiggle_native
-        dest.write_bytes(jiggle_native.attach(dest.read_bytes(),[p['name'] for p in projects if p.get('mode')=='jiggle']))
+        dest.write_bytes(jiggle_native.attach(dest.read_bytes(),[p['name'] for p in projects if p.get('mode')=='jiggle'],layered_names=[p['name'] for p in projects if p.get('mode')=='jiggle' and __import__('jiggle_layers').enabled(p.get('jiggle'))]))
+        import transparency_native
+        dest.write_bytes(transparency_native.attach(dest.read_bytes(),projects))
         progress('Export complete.');return dest
     if cd_atlases:result=cd_finish.lossless_archive(result,cd_atlases)
     if rim_names:
         import eink_mesh
         result=eink_mesh.attach(result,rim_names,[p['name'] for p in projects if p.get('mode')=='glitch'],case_names=case_names,grip_names=grip_names)
     import jiggle_native
-    result=jiggle_native.attach(result,[p['name'] for p in projects if p.get('mode')=='jiggle'])
+    result=jiggle_native.attach(result,[p['name'] for p in projects if p.get('mode')=='jiggle'],layered_names=[p['name'] for p in projects if p.get('mode')=='jiggle' and __import__('jiggle_layers').enabled(p.get('jiggle'))])
+    import transparency_native
+    result=transparency_native.attach(result,projects)
     temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
     progress('Export complete.');return dest
 
