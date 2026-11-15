@@ -1,6 +1,6 @@
-# ReSkate Deck Tool 1.9.1
+# ReSkate Deck Tool 1.9.2
 
-Deck Tool 1.9.1 preserves PNG artwork transparency and supports full-deck placement of Liquid in Glass bottom labels. Install SDEC 3.4.1 separately and enable it first for these artwork fixes. The seven-deck PNG test pack was confirmed working in ReSkate Test.
+Deck Tool 1.9.2 adds independent Liquid in Glass colour selection, including project saving, preview and native exports. Install SDEC 3.4.2 separately and enable it first for custom liquid colours. The colour test pack was confirmed working in ReSkate Dev. PNG artwork transparency and full-deck liquid labels from 1.9.1 are retained.
 
 Create effect decks and export them as installable mod ZIPs, directly to your game, or as FBMODs.
 
@@ -10,11 +10,11 @@ Create effect decks and export them as installable mod ZIPs, directly to your ga
 - **Layered Artwork Springs:** supports fixed background, moving artwork and foreground layers, alongside the existing spring controls.
 - Fixes missing exported decks by retaining each pack's inventory registration alongside its authored material routes.
 
-Install **SDEC 3.3.0 separately** and keep one copy enabled first in the mod list. SDEC is not bundled in the tool or deck exports. The editor's bottom link opens the [SDEC download page](https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/).
+Install **SDEC 3.4.2 separately** and keep one copy enabled first in the mod list. SDEC is not bundled in the tool or deck exports. The editor's bottom link opens the [SDEC download page](https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/).
 
 ZIP/direct installation still requires a separately installed shader-capable Studio compiler supporting `--board-loader-from-core`. No custom ReSkate runtime is needed for the transparency finishes. Preview lighting and geometry are approximate.
 
-See [1.9.1 release notes](docs/release-1.9.1.md) and [source build instructions](docs/build-windows.md).
+See [1.9.2 release notes](docs/release-1.9.2.md) and [source build instructions](docs/build-windows.md).
 
 ## 1.6.6 — previous release
 

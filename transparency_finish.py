@@ -54,6 +54,15 @@ def settings(mode, value=None):
     if mode=='glass' and result['finish'] not in ('display','water','liquid'):
         raise ValueError('Unknown glass finish')
     if mode=='glass' and result['finish']=='liquid':
+        liquid_colour=result.get('liquid_colour','#22aca6')
+        if not isinstance(liquid_colour,str):
+            raise ValueError('Invalid liquid colour')
+        try:
+            rgb=ImageColor.getrgb(liquid_colour)
+            if len(rgb)!=3:raise ValueError('Use an RGB liquid colour')
+        except (TypeError,ValueError) as error:
+            raise ValueError('Invalid liquid colour') from error
+        result['liquid_colour']='#%02x%02x%02x'%rgb
         rim=result.get('rim_mm',10)
         if isinstance(rim,bool) or not isinstance(rim,(float,int)) or not 2<=rim<=25:
             raise ValueError('Liquid rim width must be between 2 and 25 mm')

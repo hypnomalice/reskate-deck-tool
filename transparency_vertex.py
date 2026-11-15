@@ -6,9 +6,10 @@ from PIL import ImageColor
 def constants(mode,value=None):
     c=transparency_finish.settings(mode,value)
     haze=0. if mode=='case' and c['finish']=='glossy' else c['haze']
+    colour=[v/255 for v in ImageColor.getrgb(c['liquid_colour'])] if mode=='glass' and c['finish']=='liquid' else [c.get('cuts',140),0.,0.]
     return (*[x/255 for x in ImageColor.getrgb(c['tint'])],c['tint_strength'],
             haze,c['roughness'],c['reflection_strength'],c['thickness'],
-            c.get('cuts',140),0.,0.,c.get('rim_mm',1.) if mode=='glass' and c['finish']=='liquid' else 1.)
+            *colour,c.get('rim_mm',1.) if mode=='glass' and c['finish']=='liquid' else 1.)
 
 def patch_mesh(archive,index,mode,value=None):
     """Add one 24-byte stream to shell sections; retain all original streams.

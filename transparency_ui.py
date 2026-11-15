@@ -12,6 +12,15 @@ def install(owner,parent,Adjustment):
     for key,label,maximum in [('tint_strength','Tint strength',100),('haze','Internal haze',100),('roughness','Surface roughness',100),('reflection_strength','Reflection strength',200)]:
         control=Adjustment(label,0,0,maximum);control.changed.connect(owner.changed);box.addWidget(control);owner.transparency_controls[key]=control
     owner.fluid_controls={}
+    owner.glass_liquid_colour=QPushButton('Liquid colour');box.addWidget(owner.glass_liquid_colour)
+    def liquid_colour():
+        deck=owner.current();cfg=finish.settings('glass',deck.get('glass'))
+        colour=QColorDialog.getColor(QColor(cfg.get('liquid_colour','#22aca6')),owner,'Liquid colour')
+        if colour.isValid():
+            deck.setdefault('glass',{})['liquid_colour']=colour.name()
+            owner.glass_liquid_colour.setText('Liquid colour '+colour.name())
+            owner.changed()
+    owner.glass_liquid_colour.clicked.connect(liquid_colour)
     for key,label in [('opacity','Liquid opacity'),('viscosity','Liquid viscosity')]:
         control=Adjustment(label,0,0,100)
         control.changed.connect(owner.changed)
@@ -50,6 +59,8 @@ def apply(owner,deck):
     key='pcb' if mode=='case' and cfg['interior']=='pcb' else cfg.get('finish','crystal')
     combo.setCurrentIndex(max(0,combo.findData(key)));combo.blockSignals(False)
     owner.transparency_tint.setText('Tint '+cfg['tint'])
+    owner.glass_liquid_colour.setText('Liquid colour '+cfg.get('liquid_colour','#22aca6'))
+    owner.glass_liquid_colour.setVisible(mode=='glass' and cfg.get('finish')=='liquid')
     for key,control in owner.transparency_controls.items():control.set_value(cfg[key]*100)
     for name,control in owner.fluid_controls.items():
         control.set_value(cfg.get(name,.53 if name=='opacity' else .26)*100)
@@ -76,6 +87,7 @@ def remember(owner,deck):
         control.setVisible(liquid)
         if liquid:cfg[name]=control.value()/100
     owner.liquid_rim.setVisible(mode=='glass' and selected=='liquid')
+    owner.glass_liquid_colour.setVisible(mode=='glass' and selected=='liquid')
     if mode=='glass' and selected=='liquid':cfg['rim_mm']=owner.liquid_rim.value()
     if mode=='glass':cfg['finish']=selected
     elif mode=='case':cfg.update(finish='frosted' if selected=='pcb' else selected,interior='pcb' if selected=='pcb' else 'artwork')

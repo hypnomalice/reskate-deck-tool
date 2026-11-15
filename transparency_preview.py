@@ -48,7 +48,8 @@ class TransparencyPreview(AtlasPreview):
             end_distance=np.maximum(np.abs(z-.006)-.301,0)
             inset=x*x+end_distance*end_distance<radius*radius
             wet=(z+x*np.sin(angle)<0)&inset
-            base=np.where(wet[...,None],[.003,.088,.080],[.10,.15,.17])
+            liquid_colour=(np.array(ImageColor.getrgb(cfg['liquid_colour']))/255.)**2.2
+            base=np.where(wet[...,None],liquid_colour*.21,[.10,.15,.17])
             base_alpha=np.where(wet,.05+.88*cfg['opacity'],.05)
             alpha=label_alpha+base_alpha*(1-label_alpha)
             rgb=(source*label_alpha[...,None]+base*(base_alpha*(1-label_alpha))[...,None])/alpha[...,None]

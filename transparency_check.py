@@ -21,9 +21,9 @@ def check(folder):
                     if 'thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/' in label.text()]
         assert dependency and dependency[0].openExternalLinks()
         assert not any('Save matching SDEC' in action.text() for action in window.findChildren(QAction))
-        definitions=[('glass',{'tint':'#123456','tint_strength':.61}),('case',{'haze':.73,'future_note':'retained'}),('crystal',{'tint':'#9474d2'}),('glass',{'finish':'water'}),('case',{'interior':'pcb'})]
+        definitions=[('glass',{'tint':'#123456','tint_strength':.61}),('case',{'haze':.73,'future_note':'retained'}),('crystal',{'tint':'#9474d2'}),('glass',{'finish':'water'}),('case',{'interior':'pcb'}),('glass',{'finish':'liquid','liquid_colour':'#eaa324'})]
         for index,(mode,cfg) in enumerate(definitions):
-            d=default_deck();d.update(name=['SDEC Tool Display Glass','SDEC Tool Hazy Artwork Case','SDEC Tool Cut Crystal','SDEC Tool Water Shell','SDEC Tool Hazy PCB Case'][index],mode=mode,images=[str(art.resolve()),None]);d[mode]=cfg;window.decks.append(d)
+            d=default_deck();d.update(name=['SDEC Tool Display Glass','SDEC Tool Hazy Artwork Case','SDEC Tool Cut Crystal','SDEC Tool Water Shell','SDEC Tool Hazy PCB Case','SDEC Tool Liquid in Glass'][index],mode=mode,images=[str(art.resolve()),None]);d[mode]=cfg;window.decks.append(d)
         def wait_preview():
             start=time.monotonic()
             while window.worker or window.renderer is None or window.last_key is None or window.last_key[0]!=window.revision:
@@ -39,6 +39,16 @@ def check(folder):
             assert isinstance(window.renderer,TransparencyPreview)
             assert window.transparency_box.isVisible() and not window.case_box.isVisible() and not window.crystal_box.isVisible()
             assert window.placement_choice.count()==1
+            if index==5:
+                assert window.glass_liquid_colour is not window.liquid_colour
+                assert window.glass_liquid_colour.isVisible() and not window.liquid_colour.isVisible()
+                from unittest.mock import patch
+                from PySide6.QtGui import QColor
+                with patch('transparency_ui.QColorDialog.getColor',return_value=QColor('#eaa324')):
+                    window.glass_liquid_colour.click()
+                window.remember()
+                assert window.current()['glass']['liquid_colour']=='#eaa324'
+                assert window.glass_liquid_colour.text()=='Liquid colour #eaa324'
             before=copy.deepcopy(window.current().get(window.current()['mode'],{}));window.transparency_controls['reflection_strength'].spin.setValue(137);window.remember();wait_preview()
             cfg=window.current()[window.current()['mode']];assert cfg['reflection_strength']==1.37
             if 'tint' in before:assert cfg['tint']==before['tint']
@@ -68,7 +78,7 @@ def check(folder):
             if (folder/'visual-project.json').exists():
                 window.load_project(folder/'visual-project.json')
                 native_export.export_zip(window.workspace()['decks'],folder/'SDEC Tool Finish Examples.zip',title='SDEC Tool Finish Examples',**setup)
-        report=dict(ok=True,modes=['Glass','Clear Case','Crystal'],previews=5,project_round_trip=True,inactive_settings_preserved=True,decoded_texture_preview=True,water_animation=True,native_export=native,separate_core_required=True,screenshots=screenshots)
+        report=dict(ok=True,modes=['Glass','Clear Case','Crystal'],previews=6,independent_liquid_colour_picker=True,project_round_trip=True,inactive_settings_preserved=True,decoded_texture_preview=True,water_animation=True,native_export=native,separate_core_required=True,screenshots=screenshots)
     except Exception:report=dict(ok=False,error=traceback.format_exc())
     finally:
         if window is not None:
