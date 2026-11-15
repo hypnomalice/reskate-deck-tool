@@ -1,6 +1,6 @@
-# ReSkate Deck Tool 1.9.0
+# ReSkate Deck Tool 1.9.1
 
-Deck Tool 1.9.0 adds Liquid in Glass with optional bottom-label artwork and adjustable liquid opacity, viscosity and clear rim width. Install SDEC 3.4.0 separately and enable it first. The all-effects project was exported through the Windows application and all 35 decks were confirmed working in ReSkate Test.
+Deck Tool 1.9.1 preserves PNG artwork transparency and supports full-deck placement of Liquid in Glass bottom labels. Install SDEC 3.4.1 separately and enable it first for these artwork fixes. The seven-deck PNG test pack was confirmed working in ReSkate Test.
 
 Create effect decks and export them as installable mod ZIPs, directly to your game, or as FBMODs.
 
@@ -14,7 +14,7 @@ Install **SDEC 3.3.0 separately** and keep one copy enabled first in the mod lis
 
 ZIP/direct installation still requires a separately installed shader-capable Studio compiler supporting `--board-loader-from-core`. No custom ReSkate runtime is needed for the transparency finishes. Preview lighting and geometry are approximate.
 
-See [1.8.0 release notes](docs/release-1.8.0.md) and [source build instructions](docs/build-windows.md).
+See [1.9.1 release notes](docs/release-1.9.1.md) and [source build instructions](docs/build-windows.md).
 
 ## 1.6.6 — previous release
 

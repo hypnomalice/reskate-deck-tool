@@ -43,6 +43,18 @@ class AtlasPreview:
         bottom = self.pixels[y1, x0] * (1 - tx) + self.pixels[y1, x1] * tx
         return top * (1 - ty) + bottom * ty
 
+    def sample_alpha(self, u, v):
+        x, y = np.broadcast_arrays(np.asarray(u) * self.width - .5,
+                                   np.asarray(v) * self.height - .5)
+        x = np.clip(x, 0, self.width - 1)
+        y = np.clip(y, 0, self.height - 1)
+        x0, y0 = np.floor(x).astype(np.int32), np.floor(y).astype(np.int32)
+        x1, y1 = np.minimum(x0 + 1, self.width - 1), np.minimum(y0 + 1, self.height - 1)
+        tx, ty = x - x0, y - y0
+        top = self.alpha[y0, x0] * (1 - tx) + self.alpha[y0, x1] * tx
+        bottom = self.alpha[y1, x0] * (1 - tx) + self.alpha[y1, x1] * tx
+        return top * (1 - ty) + bottom * ty
+
     def sample_channel(self, u, v, channel):
         """Bilinear scalar sampling for depth, without allocating unused RGB."""
         x, y = np.broadcast_arrays(np.asarray(u) * self.width - .5,

@@ -87,7 +87,7 @@ def artwork_atlas(image, internal_blur_pixels=0.):
     if not math.isfinite(radius) or not 0<=radius<=64:
         raise ValueError('Invalid internal artwork blur')
     art=image.convert('RGBA').resize((512,2048),Image.Resampling.LANCZOS)
-    if radius:art=art.filter(ImageFilter.GaussianBlur(radius))
+    if radius:art=art.convert('RGBa').filter(ImageFilter.GaussianBlur(radius)).convert('RGBA')
     atlas=Image.new('RGBA',(512,4096),(255,255,255,255))
     atlas.paste(art,(0,0))
     return atlas

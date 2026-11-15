@@ -34,29 +34,35 @@ class TransparencyPreview(AtlasPreview):
         elif self.mode=='glass' and cfg['finish']=='water':
             clock=self.clock_seconds;wave=np.sin(bu*24+bv*8+clock*1.1)*.07+np.cos(bv*32-bu*7-clock*.9)*.06;sampleu+=wave*.012
         source=self.sample(np.clip(sampleu,left,right),np.clip(samplev,top,bottom)*.5)
+        artwork_alpha=self.sample_alpha(np.clip(sampleu,left,right),np.clip(samplev,top,bottom)*.5)
         inset=(bu>.04)&(bu<.96)&(bv>.015)&(bv<.985)
         if self.mode=='case' and cfg['interior']=='pcb':
-            x,z=(bu-.5)*.216,.415-bv*.818;inset=(np.abs(x)<.073)&(np.abs(z)<.31);source=np.zeros_like(source)+[.025,.19,.065]
+            x,z=(bu-.5)*.216,.415-bv*.818;inset=(np.abs(x)<.073)&(np.abs(z)<.31);source=np.zeros_like(source)+[.025,.19,.065];artwork_alpha=np.ones_like(artwork_alpha)
             traces=(np.abs(np.sin(x*950+z*11))>.97)&inset;source+=traces[...,None]*[.06,.075,.025]
             for cx,cz,hx,hz in [(-.025,.22,.022,.035),(.025,.075,.024,.040),(-.020,-.12,.025,.038),(.025,-.235,.017,.023)]:
                 chip=(np.abs(x-cx)<hx)&(np.abs(z-cz)<hz);source=np.where(chip[...,None],[.045,.05,.055],source)
         if self.mode=='glass' and cfg['finish']=='liquid':
+            label_alpha=artwork_alpha*inset
             x,z=(bu-.5)*.216,.415-bv*.818
-            label=(np.abs(x)<.053)&(np.abs(z-.063)<.0275)
-            source=self.sample(np.clip(.5+x/.106,0,1),np.clip(.5-(z-.063)/.055,0,1)*.5)
             radius=.108-cfg['rim_mm']*.001
             end_distance=np.maximum(np.abs(z-.006)-.301,0)
             inset=x*x+end_distance*end_distance<radius*radius
             wet=(z+x*np.sin(angle)<0)&inset
-            rgb=np.where(label[...,None],source,np.where(wet[...,None],[.003,.088,.080],[.10,.15,.17]))
+            base=np.where(wet[...,None],[.003,.088,.080],[.10,.15,.17])
+            base_alpha=np.where(wet,.05+.88*cfg['opacity'],.05)
+            alpha=label_alpha+base_alpha*(1-label_alpha)
+            rgb=(source*label_alpha[...,None]+base*(base_alpha*(1-label_alpha))[...,None])/alpha[...,None]
             rgba=display(rgb).convert('RGBA')
-            rgba.putalpha(Image.fromarray(np.uint8(255*np.where(label,1,np.where(wet,.05+.88*cfg['opacity'],.05)))))
+            rgba.putalpha(Image.fromarray(np.uint8(np.rint(255*alpha))))
             return rgba
         haze=0 if self.mode=='case' and cfg['finish']=='glossy' else cfg['haze'];tint=(np.array(ImageColor.getrgb(cfg['tint']))/255.)**2.2
         rough=cfg['roughness'];width=.035+rough*.18;highlight=np.exp(-((bu-(.35+angle*.45+wave*.8))/(width))**2)*(.12+.32*abs(angle));highlight*=cfg['reflection_strength']
         reflection=np.stack((highlight*.93,highlight*.98,highlight),axis=-1);source=source*(.72+.28*(1-facet[...,None]))
         rgb=source*(1-haze*.4)+tint*haze*.25+reflection;rgb=rgb*(1-cfg['tint_strength']*.12)+tint*cfg['tint_strength']*.06
         edge=np.clip((np.abs(bu-.5)-.40)/.1,0,1);coverage=np.clip(.04+.5*abs(angle)**5+edge*.45+haze*.25+facet*.16,0,1)
-        shell=tint*.10+reflection+edge[...,None]*[.025,.08,.07];rgb=np.where(inset[...,None],rgb,shell)
-        rgba=display(rgb).convert('RGBA');rgba.putalpha(Image.fromarray(np.uint8(np.rint(np.where(inset,1,coverage)*255))))
+        shell=tint*.10+reflection+edge[...,None]*[.025,.08,.07]
+        art_alpha=np.where(inset,artwork_alpha,0)
+        alpha=art_alpha+coverage*(1-art_alpha)
+        rgb=(rgb*art_alpha[...,None]+shell*(coverage*(1-art_alpha))[...,None])/np.maximum(alpha[...,None],1e-6)
+        rgba=display(rgb).convert('RGBA');rgba.putalpha(Image.fromarray(np.uint8(np.rint(alpha*255))))
         return rgba

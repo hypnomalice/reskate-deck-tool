@@ -18,7 +18,7 @@ def decode_bc7(data, size):
               [0x1000, 0, 0, 0, 0])
     header = b'DDS '+struct.pack('<31I',*fields)+struct.pack('<5I',99,3,0,1,0)
     with Image.open(io.BytesIO(header+data[:length])) as image:
-        return image.convert('RGB')
+        return image.convert('RGBA')
 
 
 def prepare(project, mode, progress=lambda message: None):

@@ -192,7 +192,7 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
                     continue
                 fit = background_fit if background_fit and index==1 else project.get('fit','Stretch')
                 image = image_placement.frame(path, fit, project.get('background','#ffffff'),
-                    placements[index], alpha=(project.get('mode') in ('layers','window','liquid') and index==0) or (project.get('mode')=='neon' and index==1),
+                    placements[index], alpha=(project.get('mode') in ('layers','window','liquid','glass','case','crystal') and index==0) or (project.get('mode')=='neon' and index==1),
                     depth=project.get('mode') in ('depth','ghost','ink','jiggle') and index==1)
                 target = Path(scratch)/f'{number}-{index}.png'
                 image.save(target)
@@ -249,10 +249,11 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
                 raise ValueError('Custom Clear Case masks need migration before native transparency export. Your project and masks are unchanged.')
             if mode=='crystal' and cfg['cuts']!=140:
                 raise ValueError('Choose the current crystal pattern in Effect settings to export this older project. Its previous cut density remains saved.')
-            graphic=artwork(a,fit,background)
+            import image_placement
+            graphic=image_placement.frame(a,fit,background,alpha=True)
             radius=transparency_finish.internal_blur_pixels(mode,cfg)
             packed=transparency_finish.artwork_atlas(graphic,radius)
-            texture=encode(packed,progress,mipmaps=False)
+            texture=encode(packed,progress,mipmaps=False,profile='alpha_slow')
             thumb=thumbnail(graphic,graphic,custom,background=background,label={'glass':'GLASS','case':'CLEAR CASE','crystal':'CRYSTAL'}[mode])
         elif mode in ('eink','glitch'):
             import digital_finish

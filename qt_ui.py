@@ -1589,7 +1589,7 @@ class Creator(QMainWindow):
                                 source.thumbnail((1024,4096),Image.Resampling.LANCZOS)
                                 sources.append(source)
                     if d['mode']=='jiggle':d['placement'][1]=dict(d['placement'][0])
-                    images = [image_placement.frame(source,d['background_fit'] if d['mode']=='layers' and i==1 else d['fit'],d['background'],d.get('middle_placement',{}) if i==2 else d['placement'][i],alpha=(d['mode'] in ('layers','window','liquid') and i in (0,2)) or (d['mode']=='neon' and i==1),depth=d['mode'] in ('depth','ghost','cd','ink','jiggle') and i==1) for i,source in enumerate(sources)]
+                    images = [image_placement.frame(source,d['background_fit'] if d['mode']=='layers' and i==1 else d['fit'],d['background'],d.get('middle_placement',{}) if i==2 else d['placement'][i],alpha=(d['mode'] in ('layers','window','liquid','glass','case','crystal') and i in (0,2)) or (d['mode']=='neon' and i==1),depth=d['mode'] in ('depth','ghost','cd','ink','jiggle') and i==1) for i,source in enumerate(sources)]
                     if d['mode'] in ('depth','ghost','cd') and settings.get('invert'):
                         images[1] = ImageOps.invert(images[1].convert('RGB'))
                     strength,convergence,bands = (settings.get(k,v) for k,v in [('strength',.04),('convergence',.5),('bands',1)])

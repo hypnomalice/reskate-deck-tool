@@ -124,7 +124,7 @@ def export_zip(projects, destination, progress=lambda message: None, *, title, a
                     f'{title}\n\nInstall this ZIP through the ReSkate launcher, or extract its {name} folder into Mods. '
                     'Keep one current SDEC core enabled at number 1 (the very top) of your mod list.\n'
                     'CD depth movement requires SDEC 2.1.1 or newer; optional sheen requires 2.1.0 or newer.\n'
-                    'Glass, Clear Case and Crystal finishes require SDEC 3.3.0. Artwork Springs requires SDEC 3.1.0 or newer. Springs preview needs ReSkate 2.1.4-5 Hotfix or newer.\n'
+                    'Glass, Clear Case and Crystal artwork transparency requires SDEC 3.4.1. Artwork Springs requires SDEC 3.1.0 or newer. Springs preview needs ReSkate 2.1.4-5 Hotfix or newer.\n'
                     'SDEC is a separate required install; it is not bundled with Deck Tool or deck exports.\n'
                     'https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/\n')
                 zipped.writestr(name+'/DECK TOOL README.txt', readme)
