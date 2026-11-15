@@ -6,6 +6,26 @@ import transparency_native as native
 
 
 class NativeTransparencySettingsTests(unittest.TestCase):
+    def test_private_optical_shaders_ship_support_even_when_base_game_has_it(self):
+        import effects_runtime
+        updates=effects_runtime._runtime_updates()
+        required={
+            'expressionshader/bindingset/1338913344384487326',
+            'expressionshader/bindingset/14137980366495223483',
+            'expressionshader/bindingsignature/6134639044945407584',
+            'expressionshader/inputlayout/11152549358718046305',
+            'expressionshader/inputlayout/2377702306151678228',
+            'expressionshader/passbinding/14961798414840856876',
+            'expressionshader/rootslotinitdata/14183746609735141392',
+            'expressionshader/rootslotinitdata/8971847463084794503',
+        }
+        native.validate_runtime_dependencies(updates)
+        for missing in required:
+            with self.subTest(missing=missing), self.assertRaises(ValueError):
+                native.validate_runtime_dependencies(
+                    [(row,payload) for row,payload in updates if row['name']!=missing],
+                    base_dependencies={name:True for name in required})
+
     def test_runtime_rejects_the_missing_shared_data_from_second_crash(self):
         import effects_runtime
         updates=effects_runtime._runtime_updates()
@@ -49,16 +69,13 @@ class NativeTransparencySettingsTests(unittest.TestCase):
                 dict(name='Spring',mode='jiggle')],folder)
             rows=json.loads(path.read_text())['materials']
             self.assertEqual(rows[0],existing)
-            self.assertEqual(len(rows),3)
-            self.assertEqual(rows[1]['parameters'][0]['default'],[1,0,0])
-            self.assertEqual(rows[2]['parameters'][0]['default'],[0,0,1])
-            self.assertEqual(rows[2]['parameters'][1]['default'][1],.8)
+            self.assertEqual(rows,[existing])
 
-    def test_existing_item_cannot_be_silently_overwritten(self):
+    def test_invalid_settings_do_not_overwrite_existing_declarations(self):
         with tempfile.TemporaryDirectory() as folder:
-            project=dict(name='Glass',mode='glass')
-            native.write_materials([project],folder)
-            path=Path(folder)/'reskate-materials.json';before=path.read_bytes()
+            path=Path(folder)/'reskate-materials.json'
+            path.write_text('{"schema":1,"materials":[]}');before=path.read_bytes()
+            project=dict(name='Glass',mode='glass',glass=dict(haze=2))
             with self.assertRaises(ValueError):native.write_materials([project],folder)
             self.assertEqual(path.read_bytes(),before)
 

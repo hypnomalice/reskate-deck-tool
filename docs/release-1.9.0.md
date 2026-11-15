@@ -1,0 +1,1 @@
+Deck Tool 1.9.0 adds Liquid in Glass with optional bottom-label artwork and adjustable liquid opacity, viscosity and clear rim width. Install SDEC 3.4.0 separately and enable it first. The all-effects project was exported through the Windows application and all 35 decks were confirmed working in ReSkate Test.

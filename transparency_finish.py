@@ -51,8 +51,18 @@ def settings(mode, value=None):
         result[name]=value
     if not isinstance(result['grip_tape'],bool):
         raise ValueError('Grip tape must be enabled or disabled')
-    if mode=='glass' and result['finish'] not in ('display','water'):
+    if mode=='glass' and result['finish'] not in ('display','water','liquid'):
         raise ValueError('Unknown glass finish')
+    if mode=='glass' and result['finish']=='liquid':
+        rim=result.get('rim_mm',10)
+        if isinstance(rim,bool) or not isinstance(rim,(float,int)) or not 2<=rim<=25:
+            raise ValueError('Liquid rim width must be between 2 and 25 mm')
+        result['rim_mm']=float(rim)
+        for key,default in [('opacity',.53),('viscosity',.26)]:
+            val=result.get(key,default)
+            if isinstance(val,bool) or not isinstance(val,(int,float)) or not 0<=val<=1:
+                raise ValueError('Invalid liquid '+key)
+            result[key]=float(val)
     if mode=='case':
         if result['finish'] not in ('frosted','glossy'):
             raise ValueError('Unknown clear-case finish')

@@ -1,4 +1,4 @@
-"""Per-item optical defaults on the official native material parameter route."""
+"""Transparent mesh export and legacy runtime dependency validation."""
 from pathlib import Path
 import json
 import transparency_finish
@@ -17,6 +17,10 @@ COLOUR_GUIDS=(
     '942b7a097841ec5c59ff5e880100548c',
 )
 AUTHORING_MARKER=.917
+PRIVATE_SHARED_DATA={
+    'expressionshader/permutationshareddata/4934996381106885165',
+    'expressionshader/permutationshareddata/8966678930247011693',
+}
 
 
 def validate_parameter_ids(identities=COLOUR_GUIDS):
@@ -47,6 +51,7 @@ def validate_runtime_dependencies(updates, base_dependencies=None):
     for name,(record,payload) in resources.items():
         if not name.startswith('expressionshader/permutation'):continue
         raw=unpack(payload)
+        require_shipped=name in PRIVATE_SHARED_DATA
         if name.startswith('expressionshader/permutationshareddata/'):
             fields=((0,'passbinding'),(8,'bindingsignature'),(0x18,'bindingset'),
                     (0x20,'bindingset'),(0x28,'bindingset'),(0x38,'rootslotinitdata'))
@@ -57,11 +62,12 @@ def validate_runtime_dependencies(updates, base_dependencies=None):
             if struct.unpack_from('<I',descriptor,tail)[0]!=3565812427:continue
             dependencies=['expressionshader/permutationshareddata/'+str(struct.unpack_from('<Q',raw,0)[0]),
                           'expressionshader/inputlayout/'+str(struct.unpack_from('<Q',raw,16)[0])]
+            require_shipped=dependencies[0] in PRIVATE_SHARED_DATA
             meta=descriptor[tail+16:tail+32];size=struct.unpack_from('<I',meta)[0]
             dependencies += ['shaders/bytecode/'+str(uuid.UUID(bytes_le=raw[at:at+16]))
                              for at in range(32,size,16) if any(raw[at:at+16])]
         missing.extend((name,dep) for dep in dependencies
-                       if dep not in resources and dep not in base_dependencies)
+                       if dep not in resources and (require_shipped or dep not in base_dependencies))
     if missing:
         raise ValueError('Incomplete native shader dependencies: '+repr(missing[:8]))
 
@@ -77,24 +83,24 @@ def parameter_values(mode,value=None):
 
 
 def write_materials(projects,folder):
-    """Append optical declarations, retaining spring and other material settings."""
+    """Validate optics without adding overrides that could affect other passes.
+
+    Current optical controls travel in the shell's vertex stream. Spring and
+    other declarations already written to this folder must remain unchanged.
+    """
     projects=[p for p in projects if p.get('mode') in transparency_finish.MODES]
-    if not projects:return
-    folder=Path(folder);path=folder/'reskate-materials.json'
-    document=json.loads(path.read_text()) if path.exists() else dict(schema=1,materials=[])
-    if document.get('schema')!=1 or not isinstance(document.get('materials'),list):
-        raise ValueError('Unsupported material declaration file')
-    additions=[];seen={item.casefold() for row in document['materials'] for item in row.get('items',[])}
     for project in projects:
-        mode=project['mode'];item='Own_'+project['name'].replace(' ','_')
-        if item.casefold() in seen:raise ValueError('Duplicate material settings for '+project['name'])
-        seen.add(item.casefold())
-        values=parameter_values(mode,project.get(mode))
-        additions.append(dict(part='deck',items=[item],parameters=[
-            dict(guid=guid,type='colour',default=default)
-            for guid,default in zip(COLOUR_GUIDS,values)]))
-    document['materials'].extend(additions)
-    path.write_text(json.dumps(document,indent=2),encoding='utf8')
+        cfg=transparency_finish.settings(project['mode'],project.get(project['mode']))
+        if project['mode']=='glass' and cfg['finish']=='liquid':
+            path=Path(folder)/'reskate-materials.json'
+            data=json.loads(path.read_text()) if path.exists() else dict(schema=1,materials=[])
+            item='Own_'+project['name'].replace(' ','_')
+            data['materials']=[m for m in data['materials'] if m.get('items')!=[item]]
+            data['materials'].append(dict(part='deck',items=[item],parameters=[
+                dict(guid='f2750d14eec871a459ff5e8801001713',type='colour',default=[cfg['opacity'],cfg['viscosity'],1]),
+                dict(guid='b2c04e2f74b5671559ff5e880100e616',type='colour',default=[.5,.5,.625+.125*cfg['opacity']]),
+                dict(guid='e2a9184b35cd468c59ff5e880100548c',type='colour',default=[.5,.5,0])]))
+            path.write_text(json.dumps(data,indent=2))
 
 
 def patch_recipe(raw,mode,value=None):
@@ -116,20 +122,28 @@ def attach(data,projects):
     """Attach the selected private transparent shell and contained interior."""
     import uuid
     import eink_mesh
+    import transparency_vertex
     from fbmod_compat import Archive,unpack
     selected=[p for p in projects if p.get('mode') in transparency_finish.MODES]
     if not selected:return data
     for project in selected:
         mode=project['mode'];cfg=transparency_finish.settings(mode,project.get(mode))
-        profile=('water' if cfg['finish']=='water' else 'glass') if mode=='glass' else ('case-pcb' if cfg['interior']=='pcb' else 'case') if mode=='case' else 'crystal'
-        seed='transparency/'+profile+'-transparent-mesh.fbmod'
+        profile=(cfg['finish'] if cfg['finish'] in ('water','liquid') else 'glass') if mode=='glass' else ('case-pcb' if cfg['interior']=='pcb' else 'case') if mode=='case' else 'crystal'
+        seed='transparency/vertex-'+profile+'-transparent-mesh.fbmod'
         data=eink_mesh._attach(data,[project['name']],seed,is_case=True,extra_indices=(30,))
         archive=Archive(data)
         token=uuid.uuid5(uuid.NAMESPACE_URL,'sdec/eink-rim/'+project['name'].casefold()).hex
         name='characters/maincharacters/reskate/shaders/'+token+'_transparent_shell'
         index=archive.find(2,name)
         if index is None:raise ValueError('The exported deck is missing its private shell recipe')
-        archive.replace(index,patch_recipe(unpack(archive.blobs[index]),mode,cfg))
+        expected=json.loads((Path(__file__).resolve().parent/'assets/transparency/vertex-material-keys.json').read_text())
+        import struct
+        kind='pcb' if profile=='case-pcb' else profile
+        if struct.unpack_from('<Q',unpack(archive.blobs[index]),16)[0]!=expected[kind]:
+            raise ValueError('Optical mesh template does not match the shared SDEC shader contract')
+        mesh=archive.find(2,'characters/maincharacters/reskate/'+token+'_mesh')
+        if mesh is None:raise ValueError('The exported deck is missing its optical mesh')
+        transparency_vertex.patch_mesh(archive,mesh,mode,cfg)
         data=archive.bytes()
         if cfg['grip_tape']:data=eink_mesh.equipped_grip(data,[project['name']])
     return data

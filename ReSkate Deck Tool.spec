@@ -17,7 +17,7 @@ for folder in (engine, engine / 'depth-template'):
                  (str(folder / 'template-manifest.json'), relative)])
 a = Analysis([str(root / 'Lenticular Deck Creator.pyw')],
     pathex=[str(root), str(engine)], binaries=collect_dynamic_libs('onnxruntime'),
-    datas=data, hiddenimports=['transparency_check','transparency_preview','transparency_ui','transparency_native','transparency_finish','onnxruntime.capi.onnxruntime_pybind11_state','jiggle_ui','jiggle_effect','jiggle_physics','jiggle_native','jiggle_preview','jiggle_preview_ui','jiggle_layers'],
+    datas=data, hiddenimports=['transparency_check','transparency_preview','transparency_ui','transparency_native','transparency_vertex','transparency_finish','onnxruntime.capi.onnxruntime_pybind11_state','jiggle_ui','jiggle_effect','jiggle_physics','jiggle_native','jiggle_preview','jiggle_preview_ui','jiggle_layers'],
     excludes=['gemstone_study','pandas', 'matplotlib', 'onnxruntime.transformers', 'onnxruntime.quantization'])
 
 # Package only the selected runtime, not archived development shader payloads.

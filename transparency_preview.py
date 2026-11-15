@@ -40,6 +40,18 @@ class TransparencyPreview(AtlasPreview):
             traces=(np.abs(np.sin(x*950+z*11))>.97)&inset;source+=traces[...,None]*[.06,.075,.025]
             for cx,cz,hx,hz in [(-.025,.22,.022,.035),(.025,.075,.024,.040),(-.020,-.12,.025,.038),(.025,-.235,.017,.023)]:
                 chip=(np.abs(x-cx)<hx)&(np.abs(z-cz)<hz);source=np.where(chip[...,None],[.045,.05,.055],source)
+        if self.mode=='glass' and cfg['finish']=='liquid':
+            x,z=(bu-.5)*.216,.415-bv*.818
+            label=(np.abs(x)<.053)&(np.abs(z-.063)<.0275)
+            source=self.sample(np.clip(.5+x/.106,0,1),np.clip(.5-(z-.063)/.055,0,1)*.5)
+            radius=.108-cfg['rim_mm']*.001
+            end_distance=np.maximum(np.abs(z-.006)-.301,0)
+            inset=x*x+end_distance*end_distance<radius*radius
+            wet=(z+x*np.sin(angle)<0)&inset
+            rgb=np.where(label[...,None],source,np.where(wet[...,None],[.003,.088,.080],[.10,.15,.17]))
+            rgba=display(rgb).convert('RGBA')
+            rgba.putalpha(Image.fromarray(np.uint8(255*np.where(label,1,np.where(wet,.05+.88*cfg['opacity'],.05)))))
+            return rgba
         haze=0 if self.mode=='case' and cfg['finish']=='glossy' else cfg['haze'];tint=(np.array(ImageColor.getrgb(cfg['tint']))/255.)**2.2
         rough=cfg['roughness'];width=.035+rough*.18;highlight=np.exp(-((bu-(.35+angle*.45+wave*.8))/(width))**2)*(.12+.32*abs(angle));highlight*=cfg['reflection_strength']
         reflection=np.stack((highlight*.93,highlight*.98,highlight),axis=-1);source=source*(.72+.28*(1-facet[...,None]))

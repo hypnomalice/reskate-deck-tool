@@ -148,7 +148,9 @@ def _attach(data,names,seed_file,is_glitch=False,is_case=False,*,extra_indices=(
         with tempfile.TemporaryDirectory() as folder:
             f=Path(folder);(f/'data').write_bytes(lr);(f/'meta').write_bytes(lm)
             (f/'pairs').write_text(''.join(x+'\t'+y+'\n' for x,y in registration_pairs),encoding='utf8')
-            subprocess.run([str(helper),str(f/'data'),str(f/'meta'),str(f/'pairs'),str(f/'out'),str(f/'outmeta')],check=True,capture_output=True)
+            subprocess.run([str(helper),str(f/'data'),str(f/'meta'),str(f/'pairs'),str(f/'out'),str(f/'outmeta')],
+                           check=True,capture_output=True,
+                           creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
             lr=(f/'out').read_bytes();lm=(f/'outmeta').read_bytes()
         # Bundle table contains appearance routes; shader keys belong to the shared shader database.
         ti=a.find(2,'characters/customization/configs/cas_main_bundlereftable')
