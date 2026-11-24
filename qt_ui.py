@@ -384,6 +384,8 @@ class Creator(QMainWindow):
             if len(deck['extra_images'])>6:raise ValueError('Lenticular supports up to eight pictures.')
             if deck.get('middle_image'):
                 deck['middle_image']=str((Path(path).parent/deck['middle_image']).resolve())
+            for piece in deck.get('shaker',{}).get('pieces',[]):
+                if piece.get('image'):piece['image']=str((Path(path).parent/piece['image']).resolve())
             if deck.get('thumbnail'):
                 deck['thumbnail'] = str((Path(path).parent/deck['thumbnail']).resolve())
             for cfg in deck.get('ghost',{}).values():
@@ -415,7 +417,7 @@ class Creator(QMainWindow):
         try:
             for d in projects:
                 engine.validate_name(d['name'])
-                if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch','glass','case','crystal','jiggle') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
+                if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch','glass','case','crystal','jiggle','shaker') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
                     raise ValueError('Choose the images for '+d['name']+'.')
             if len({engine.validate_name(d['name']).casefold() for d in projects})!=len(projects):
                 raise ValueError('Give each deck a different name.')
@@ -426,8 +428,8 @@ class Creator(QMainWindow):
         mode = self.export_mode.currentData()
         folder_export = mode == 'game'
         native = mode != 'fbmod'
-        if not native and any(p.get('mode')=='jiggle' for p in projects):
-            QMessageBox.warning(self,'Choose an installable export','Artwork Springs needs Mod ZIP or Install to game so the deck includes its movement settings.')
+        if not native and any(p.get('mode') in ('jiggle','shaker') for p in projects):
+            QMessageBox.warning(self,'Choose an installable export','Artwork Springs and Shaker need Mod ZIP or Install to game so the deck includes its movement settings.')
             return
         if folder_export:
             folder_name,accepted = QInputDialog.getText(self,'Name your deck pack','Folder name in Mods:',text=title)
@@ -518,7 +520,7 @@ class Creator(QMainWindow):
                 return None
         if force or not Path(compiler).is_file():
             candidates = [Path(game)/folder/'reskate_cli.exe' for folder in ('Studio','Studio with Shaders')]
-            compiler = '' if force else str(next((p for p in candidates if p.is_file()),''))
+            compiler = '' if force else str(next((p for p in candidates if native_export.supports_shared_core(p)),''))
             if not compiler:
                 compiler,_ = QFileDialog.getOpenFileName(self,'Choose Studio reskate_cli.exe',filter='Studio compiler (reskate_cli.exe)')
             if not compiler:
@@ -936,6 +938,7 @@ class Creator(QMainWindow):
         transparency_ui.install(self,effects,Adjustment)
         import jiggle_ui
         jiggle_ui.install(self,effects,Adjustment)
+        __import__('shaker_ui').install(self,effects)
         self.crystal_box=QGroupBox('Cut crystal')
         crystal_layout=QVBoxLayout(self.crystal_box)
         self.crystal_tint=QPushButton('Crystal tint');self.crystal_tint.clicked.connect(self.choose_crystal_tint);crystal_layout.addWidget(self.crystal_tint)
@@ -943,7 +946,7 @@ class Creator(QMainWindow):
         self.crystal_cuts.setToolTip('Fewer large facets or more small facets. Deterministic triangular cuts; the total is approximate.')
         self.crystal_cuts.changed.connect(self.changed);crystal_layout.addWidget(self.crystal_cuts)
         self.crystal_grip=QCheckBox('Use equipped grip tape');self.crystal_grip.setChecked(False);self.crystal_grip.toggled.connect(self.changed);crystal_layout.addWidget(self.crystal_grip)
-        crystal_hint=QLabel('Artwork refracted through simulated crystal cuts. Uses the grip item equipped in ReSkate; exposed top artwork is static and mirrored. Requires the experimental crystal-enabled SDEC core.')
+        crystal_hint=QLabel('Artwork refracted through simulated crystal cuts. Uses the grip item equipped in ReSkate; exposed top artwork is static and mirrored. Requires SDEC 3.5.0 or newer.')
         crystal_hint.setWordWrap(True);crystal_layout.addWidget(crystal_hint);effects.addWidget(self.crystal_box)
         self.digital_box=QGroupBox('Display behaviour')
         digital_layout=QVBoxLayout(self.digital_box)
@@ -1114,6 +1117,8 @@ class Creator(QMainWindow):
         if self.loading:
             return
         d = self.current()
+        if list(MODES)[self.mode.currentIndex()]=='shaker' and 'shaker' not in d:
+            self.fit.blockSignals(True);self.fit.setCurrentText('Crop to fill');self.fit.blockSignals(False)
         d.update(name=self.name.text(),author=self.author.text(),mode=list(MODES)[self.mode.currentIndex()],lenticular=self.lenticular.isChecked(),fit=self.fit.currentText(),background_fit=self.backfit.currentText(),
             depth=dict(strength=self.strength.value()/100,convergence=self.convergence.value()/100,bands=self.bands.value()/100,invert=self.invert.isChecked()),
             animation=dict(quality=(1,2,4)[self.quality.currentIndex()]),wood_tint=d.get('wood_colour',d.get('wood_tint') or '#b98a56') if self.wood_mode.currentIndex() else None,wood_intensity=self.intensity.value()/100)
@@ -1127,6 +1132,7 @@ class Creator(QMainWindow):
             cfg=d.setdefault('ghost',{}).setdefault(kind,{})
             cfg.update(selection=('all','mask','colour')[method.currentIndex()],tolerance=tolerance.value()/100)
         __import__('jiggle_ui').remember(self,d)
+        __import__('shaker_ui').remember(self,d)
         __import__('transparency_ui').remember(self,d)
         d['eink']=dict(span=self.eink_span.value()/100,ghosting=self.eink_ghosting.value()/100)
         d['glitch']=dict(preset=('tearing','rgb','dropout')[self.glitch_style.currentIndex()],strength=self.glitch_strength.value()/100,density=self.glitch_density.value(),speed=self.glitch_speed.value(),colour_mode=('rgb','one','two')[self.glitch_colours.currentIndex()],colour1=d.get('glitch',{}).get('colour1','#ff1744'),colour2=d.get('glitch',{}).get('colour2','#00e5ff'))
@@ -1175,6 +1181,7 @@ class Creator(QMainWindow):
         self.case_tint_strength.set_value(cc['tint_strength']*100);self.case_haze.set_value(cc['haze']*100);self.case_depth.set_value(cc['depth']/.0006)
         self.case_tint.setText('Shell tint '+cc['tint'])
         __import__('jiggle_ui').apply(self,d)
+        __import__('shaker_ui').apply(self,d)
         import crystal_finish
         crystal=crystal_finish.settings(d.get('crystal'));self.crystal_tint.setText('Crystal tint '+crystal['tint']);self.crystal_cuts.set_value(crystal['cuts']);self.crystal_grip.setChecked(crystal['grip_tape'])
         __import__('transparency_ui').apply(self,d)
@@ -1237,7 +1244,7 @@ class Creator(QMainWindow):
             self.effect_picker.setCurrentIndex(self.mode.currentIndex()+1 if chosen else 0)
             self.effect_picker.blockSignals(False)
             self.inspector_tabs.setVisible(chosen)
-        names = {'jiggle':('Artwork','Depth map (optional)'), 'glass':('Bottom label' if self.current().get('glass',{}).get('finish')=='liquid' else 'Embedded artwork','Unused'), 'crystal':('Embedded artwork','Unused'),'case':('Internal artwork','Unused'),'eink':('Page 1','Page 2'),'glitch':('Artwork','Unused'),'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'ghost':('Colour image','Depth map'),'cd':('Artwork','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused'),'metal':('Graphic','Unused'),'ink':('Graphic','Reveal mask (white reveals ink)'),'window':('Front frame (transparent PNG)','Background'),'liquid':('Front image (transparent PNG)','Background'),'neon':('Artwork','Glow mask (white glows, black stays unlit)')}[mode]
+        names = {'shaker':('Background artwork','Unused'),'jiggle':('Artwork','Depth map (optional)'), 'glass':('Bottom label' if self.current().get('glass',{}).get('finish')=='liquid' else 'Embedded artwork','Unused'), 'crystal':('Embedded artwork','Unused'),'case':('Internal artwork','Unused'),'eink':('Page 1','Page 2'),'glitch':('Artwork','Unused'),'classic':('Image A','Image B'),'depth':('Colour image','Depth map'),'ghost':('Colour image','Depth map'),'cd':('Artwork','Depth map'),'layers':('Foreground (transparency supported)','Background'),'gif':('Animation','Unused'),'metal':('Graphic','Unused'),'ink':('Graphic','Reveal mask (white reveals ink)'),'window':('Front frame (transparent PNG)','Background'),'liquid':('Front image (transparent PNG)','Background'),'neon':('Artwork','Glow mask (white glows, black stays unlit)')}[mode]
         self.lenticular.setVisible(mode in ('depth','layers'))
         self.lenticular_help.setVisible(mode in ('depth','layers'))
         self.lenticular.setEnabled(not self.busy)
@@ -1245,17 +1252,18 @@ class Creator(QMainWindow):
             label.setText(names[i])
             self.image_names[i].setText(Path(self.current()['images'][i]).name if self.current()['images'][i] else '')
             for w in (label,self.image_names[i],self.image_buttons[i]):
-                w.setVisible(i==0 or (mode not in ('gif','metal','glitch','glass','case','crystal') and not (mode=='neon' and self.neon_method.currentIndex()==1)))
+                w.setVisible(i==0 or (mode not in ('gif','metal','glitch','glass','case','crystal','shaker') and not (mode=='neon' and self.neon_method.currentIndex()==1)))
         for w in (self.auto_button,self.auto_help):
             w.setVisible(mode in ('depth','ghost','cd'))
         self.case_box.setVisible(False)
         self.crystal_box.setVisible(False)
-        self.transparency_box.setVisible(mode in ('glass','case','crystal'))
-        if mode in ('glass','case','crystal') and self._transparency_mode!=mode:
+        self.transparency_box.setVisible(mode in ('glass','case','crystal','shaker'))
+        if mode in ('glass','case','crystal','shaker') and (self._transparency_mode!=('glass' if mode=='shaker' else mode) or getattr(self,'_transparency_is_shaker',False)!=(mode=='shaker')):
             was_loading=self.loading;self.loading=True
             __import__('transparency_ui').apply(self,self.current())
             self.loading=was_loading
         self.jiggle_box.setVisible(mode=='jiggle')
+        self.shaker_box.setVisible(mode=='shaker')
         if mode=='jiggle' and self.view_mode.currentText()!='3D':self.view_mode.setCurrentText('3D')
         self.case_haze.setEnabled(self.case_style.currentIndex()==0 and not self.busy)
         self.digital_box.setVisible(mode in ('eink','glitch'))
@@ -1277,8 +1285,8 @@ class Creator(QMainWindow):
         self.middle_name.setText(Path(self.current()['middle_image']).name if self.current().get('middle_image') else '')
         for control in self.layer_depth_controls:control.setVisible(three)
         self.convergence.setVisible(not three)
-        count=1 if mode in ('metal','glitch','glass','case','crystal') else 3 if (three or mode=='window' and self.current().get('middle_image')) else 2
-        placement_labels=['Artwork'] if mode in ('glass','case','crystal') else ['Artwork','Depth map'] if mode in ('depth','ghost','cd') else ['Animation'] if mode=='gif' else ['Graphic'] if mode=='metal' else ['Front frame','Background','Object layer'][:count] if mode=='window' else ['Foreground','Background','Middle layer'] if three else ['First image','Second image']
+        count=1 if mode in ('metal','glitch','glass','case','crystal','shaker') else 3 if (three or mode=='window' and self.current().get('middle_image')) else 2
+        placement_labels=['Artwork'] if mode in ('glass','case','crystal','shaker') else ['Artwork','Depth map'] if mode in ('depth','ghost','cd') else ['Animation'] if mode=='gif' else ['Graphic'] if mode=='metal' else ['Front frame','Background','Object layer'][:count] if mode=='window' else ['Foreground','Background','Middle layer'] if three else ['First image','Second image']
         if [self.placement_choice.itemText(i) for i in range(self.placement_choice.count())]!=placement_labels:
             self.placement_choice.blockSignals(True)
             self.placement_choice.clear();self.placement_choice.addItems(placement_labels)
@@ -1289,7 +1297,7 @@ class Creator(QMainWindow):
         self.bands.setEnabled(mode in ('depth','layers') and self.lenticular.isChecked() and not self.busy)
         self.bands.setVisible(mode in ('depth','layers') and self.lenticular.isChecked())
         for w in (self.strength,self.convergence,self.invert):
-            w.setVisible(mode not in ('classic','metal','ink','window','liquid','neon','eink','glitch','glass','case','crystal','jiggle') and not (three and w==self.convergence))
+            w.setVisible(mode not in ('classic','metal','ink','window','liquid','neon','eink','glitch','glass','case','crystal','jiggle','shaker') and not (three and w==self.convergence))
         for control in (self.ink_background,self.ink_revealed,self.ink_showthrough,self.ink_strength,self.ink_contrast,self.ink_invert):
             control.setVisible(mode=='ink');control.setEnabled(not self.busy)
         self.surface_strength.setEnabled(self.surface_shimmer.isChecked() and not self.busy)
@@ -1300,7 +1308,7 @@ class Creator(QMainWindow):
         if hasattr(self,'cd_surface_box'):self.cd_surface_box.setVisible(cd_on)
         if cd_on:
             self.strength.hide();self.convergence.hide()
-        self.surface_box.setVisible(not cd_on and mode not in ('glass','case','crystal','jiggle'))
+        self.surface_box.setVisible(not cd_on and mode not in ('glass','case','crystal','jiggle','shaker'))
         holo_supported=mode in ('depth','layers')
         self.surface_holo.setVisible(holo_supported);self.surface_holo_strength.setVisible(holo_supported)
         self.surface_holo_strength.setEnabled(self.surface_holo.isChecked() and not self.busy)
@@ -1546,7 +1554,7 @@ class Creator(QMainWindow):
             return
         self.remember()
         d = copy.deepcopy(self.current())
-        if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch','glass','case','crystal','jiggle') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
+        if not d['images'][0] or (d['mode'] not in ('gif','metal','glitch','glass','case','crystal','jiggle','shaker') and not (d['mode']=='neon' and d.get('neon',{}).get('selection')=='colour') and not all(d['images'])):
             self.status.setText('Choose the images for this effect.')
             self.make_thumbnail()
             return
@@ -1571,6 +1579,12 @@ class Creator(QMainWindow):
         cached_clip = self.clip if clip_key is not None and clip_key==self.clip_source_key else None
         def run():
             try:
+                if d['mode']=='shaker':
+                    import shaker_effect,shaker_preview
+                    prepared=shaker_effect.prepare(d)
+                    renderer=shaker_preview.ShakerPreview(prepared,d.get('glass'))
+                    result=(renderer,copy.copy(renderer),None,[prepared['background'],prepared['background']],[prepared['background']],None)
+                    self.events.put(('preview',revision,result));return
                 settings = d.get('depth',{})
                 if d['mode']=='gif':
                     clip = cached_clip if cached_clip is not None else animation.load(d['images'][0],preview_max_pixels=12_000_000)
@@ -1695,7 +1709,7 @@ class Creator(QMainWindow):
                 dragging = self.angle.slider.isSliderDown() or self.orbit_dragging
                 wanted = self.frame_request_key
                 acceptable = key == wanted or (dragging and wanted is not None and key[2:7] == wanted[2:7] and key[7][:2] == wanted[7][:2] and key[-1] == wanted[-1])
-                if self.current()['mode']=='jiggle' and wanted is not None and key[0]==wanted[0] and key[2:7]==wanted[2:7] and key[7][:2]==wanted[7][:2]:acceptable=True
+                if self.current()['mode'] in ('jiggle','shaker') and wanted is not None and key[0]==wanted[0] and key[2:7]==wanted[2:7] and key[7][:2]==wanted[7][:2]:acceptable=True
                 if revision == self.revision and acceptable:
                     if error:
                         self.last_key = key
@@ -1830,9 +1844,10 @@ class Creator(QMainWindow):
         angle,bands = self.angle.value()/100,self.bands.value()/100
         gif_index = self.clip.frame_index(((time.monotonic()-self.started)*1000)%self.clip.duration_ms) if self.clip else None
         glitch_tick=int((time.monotonic()-self.started)*24) if mode=='glitch' or (mode=='glass' and self.current().get('glass',{}).get('finish')=='water') else None
-        if mode=='jiggle':
+        if mode=='shaker':glitch_tick=int(time.monotonic()*60)
+        if mode in ('jiggle','shaker'):
             now=time.monotonic()
-            if not hasattr(self,'jiggle_solver'):return
+            if mode=='jiggle' and not hasattr(self,'jiggle_solver'):return
             self.poll_timer.setTimerType(Qt.PreciseTimer)
             self.animation_timer.setTimerType(Qt.PreciseTimer)
             self.poll_timer.setInterval(8)
@@ -1849,6 +1864,7 @@ class Creator(QMainWindow):
         if self.angle.slider.isSliderDown() or self.orbit_dragging:width=min(width,96)
         elif self.large:width=min(320,width*2)
         if mode=='jiggle':width=min(width,128)
+        if mode=='shaker':width=(160,240,320)[quality] if not self.large else (240,360,480)[quality]
         size=(width,width*4)
         surface_state = (self.view_mode.currentText(),self.studio_light.isChecked(),self.board.yaw,self.board.pitch)
         key = (self.revision,angle,bands,self.detail_toggle.isChecked(),gif_index,size,self.live_placement,surface_state,active_renderer is self.export_renderer and active_renderer is not None,glitch_tick)
@@ -1867,6 +1883,8 @@ class Creator(QMainWindow):
                 self.frame_renderer_key = renderer_key
                 if mode=='jiggle':__import__('jiggle_preview_ui').region(self.frame_renderer)
             snapshot = self.frame_renderer
+            if mode=='shaker':
+                snapshot=copy.copy(snapshot);snapshot.poses=active_renderer.poses.copy();snapshot.dim_background=getattr(active_renderer,'dim_background',False)
             if mode=='glitch' or (mode=='glass' and self.current().get('glass',{}).get('finish')=='water'):
                 snapshot=copy.copy(snapshot);snapshot.clock_seconds=glitch_tick/24
             elif mode=='jiggle':
@@ -1950,7 +1968,7 @@ class Creator(QMainWindow):
         angle, bands = key[1:3]
         self.last_key = key
         cd_on=self.current().get('mode')=='cd'
-        self.preview_title.setText('Transparent material · approximate lighting' if mode in ('glass','case','crystal') else 'CD finish preview · approximate lighting' if cd_on else 'Deck preview · positioning' if self.live_placement and not self.clip else 'Deck preview · export texture' if key[-1] else 'Deck preview')
+        self.preview_title.setText('Transparent material · approximate lighting' if mode in ('glass','case','crystal','shaker') else 'CD finish preview · approximate lighting' if cd_on else 'Deck preview · positioning' if self.live_placement and not self.clip else 'Deck preview · export texture' if key[-1] else 'Deck preview')
         if not prepared:
             image = board_preview.map_artwork(image)
         pixmap = QPixmap.fromImage(qt_image(image))
@@ -1994,6 +2012,8 @@ class Creator(QMainWindow):
 
     def export_texture_checked(self,enabled):
         self.render_reset()
+        if self.current()['mode']=='shaker' and enabled:
+            self.invalidate_export_preview();self.status.setText('Shaker uses its live physics preview. Check the exported deck in ReSkate for final lighting.');return
         if not enabled:
             self.preview_note.setText('Fast texture preview · game lighting and shape are approximate')
             return
@@ -2306,6 +2326,9 @@ def main():
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('ReSkate.DeckTool.Beta')
     app = application()
     window = Creator()
+    if len(sys.argv)==2 and Path(sys.argv[1]).suffix.lower()=='.json':
+        try:window.load_project(sys.argv[1])
+        except Exception as error:QMessageBox.warning(window,'Cannot open project',str(error))
     if shader_warning(window):
         window.show()
         app.exec()

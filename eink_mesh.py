@@ -220,3 +220,63 @@ def equipped_grip(data,names):
                     a.replace(chunk,vertices)
             a.replace(index,raw)
     return a.bytes()
+
+
+_route_equipped_grip=equipped_grip
+def integer(data,offset):return struct.unpack_from('<I',data,offset)[0]
+def pointer(data,offset):return struct.unpack_from('<Q',data,offset)[0]+16
+def chunk_id(data,lod):return str(uuid.UUID(bytes_le=bytes(data[lod+116:lod+132])))
+stock_path=Path(__file__).parent/'assets/stock-grip'
+stock=(stock_path/'25187.bin').read_bytes()
+import math
+def equipped_stock_grip(data, names):
+    archive = Archive(_route_equipped_grip(data, names))
+    for name in names:
+        token = uuid.uuid5(uuid.NAMESPACE_URL, 'sdec/eink-rim/'+name.casefold()).hex
+        index = next(i for i in range(len(archive.blobs))
+                     if archive.key(i)[0] == 2 and archive.key(i)[1].endswith(token+'_mesh'))
+        mesh = bytearray(unpack(archive.blobs[index]))
+        for lod_number in range(6):
+            lod = pointer(mesh, 48+lod_number*8)
+            source_lod = pointer(stock, 48+lod_number*8)
+            section = pointer(mesh, lod+12)
+            source_section = pointer(stock, source_lod+12)
+            declaration = section+112
+            source_declaration = source_section+112
+            count = integer(mesh, section+44)
+            assert count == integer(stock, source_section+44)
+            assert integer(mesh,section+32) == integer(stock,source_section+32)
+            source_chunk = (stock_path/'chunks'/(chunk_id(stock,source_lod)+'.bin')).read_bytes()
+            ci = archive.find(3,chunk_id(mesh,lod))
+            before = unpack(archive.blobs[ci])
+            chunk = bytearray(before)
+            start = integer(mesh,section+40)
+            source_start = integer(stock,source_section+40)
+            stream_count = stock[source_declaration+97]
+            assert stream_count == 6
+            size = count*sum(stock[source_declaration+64+2*s] for s in range(stream_count))
+            assert start+size <= integer(mesh,lod+92)
+            assert source_start+size <= integer(stock,source_lod+92)
+            chunk[start:start+size] = source_chunk[source_start:source_start+size]
+            # The optical padding remains in place, preserving later section offsets.
+            mesh[declaration:declaration+200] = stock[source_declaration:source_declaration+200]
+            mesh[section+28] = stock[source_section+28]
+            for offset,length in ((0x138,8),(0x144,8)):
+                mesh[section+offset:section+offset+length] = stock[source_section+offset:source_section+offset+length]
+            assert chunk[:start] == before[:start]
+            assert chunk[start+size:] == before[start+size:]
+            assert chunk[integer(mesh,lod+92):] == before[integer(mesh,lod+92):]
+            positions = [struct.unpack_from('<4e',chunk,start+j*8) for j in range(count)]
+            assert all(all(math.isfinite(v) for v in p) and abs(p[0]) < .12 and
+                       .07 < p[1] < .16 and abs(p[2]) < .44 and p[3] == 1 for p in positions)
+            index_start = integer(mesh,lod+92)+integer(mesh,section+36)*2
+            index_count = integer(mesh,section+32)*3
+            indices = struct.unpack_from('<'+str(index_count)+'H',chunk,index_start)
+            assert max(indices) < count
+            archive.replace(ci,chunk)
+
+        archive.replace(index,mesh)
+    return archive.bytes()
+
+
+equipped_grip=equipped_stock_grip

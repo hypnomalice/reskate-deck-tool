@@ -1,0 +1,30 @@
+cmake_minimum_required(VERSION 3.20)
+project(DeckToolPreview LANGUAGES CXX)
+if(NOT WIN32 OR NOT MSVC)
+    message(FATAL_ERROR "Build the Windows preview libraries with x64 MSVC.")
+endif()
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set(CMAKE_CXX_STANDARD 20)
+set(LUAU_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/luau")
+file(GLOB LUAU_FILES CONFIGURE_DEPENDS
+    "${LUAU_SOURCE}/Ast/src/*.cpp" "${LUAU_SOURCE}/Bytecode/src/*.cpp"
+    "${LUAU_SOURCE}/Common/src/*.cpp" "${LUAU_SOURCE}/Compiler/src/*.cpp"
+    "${LUAU_SOURCE}/VM/src/*.cpp")
+add_library(deck_tool_luau STATIC ${LUAU_FILES})
+foreach(component Ast Bytecode Common Compiler VM)
+    target_include_directories(deck_tool_luau PUBLIC "${LUAU_SOURCE}/${component}/include")
+endforeach()
+target_compile_definitions(deck_tool_luau PRIVATE _CRT_SECURE_NO_WARNINGS)
+add_library(shaker_preview SHARED shaker_preview.cpp)
+target_link_libraries(shaker_preview PRIVATE deck_tool_luau)
+add_library(jiggle_preview SHARED jiggle_preview.cpp)
+foreach(target shaker_preview jiggle_preview)
+    if(target STREQUAL "shaker_preview")
+        set(component shaker)
+    else()
+        set(component jiggle)
+    endif()
+    set_target_properties(${target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../assets/${component}-runtime"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/../assets/${component}-runtime")
+endforeach()

@@ -1,16 +1,26 @@
-# Build the Windows app
+# Build Deck Tool 1.10.0 on Windows
 
-Use Python with requirements.txt and PyInstaller. Build the native preview helper first, from an x64 Visual Studio 2022 developer prompt:
+Use x64 Python, Visual Studio 2022 Build Tools with C++, CMake and the pinned dependencies in requirements-build.txt. Run from the source root in an x64 Visual Studio developer prompt:
 
 ```bat
-native\build_jiggle_preview.cmd
+python -m pip install -r requirements-build.txt
+cmake -S native -B build/native -A x64
+cmake --build build/native --config Release --parallel
 pyinstaller --noconfirm "ReSkate Deck Tool.spec"
 ```
 
-The helper uses only the Windows/C++ standard runtime, statically linked. Its C++ source is native/jiggle_preview.cpp. Python source runs can fall back to NumPy when the DLL is absent; the packaged Windows build requires it for preview performance. Build products stay out of Git.
+CMake builds both jiggle_preview.dll and shaker_preview.dll into their assets folders. The source archive includes the exact Luau VM/compiler source snapshot used by the shaker helper, with its MIT licence and source hashes. The C++ runtime is linked statically. No private SDK library is needed to build these helpers. Build products and Python caches are excluded from the source archive.
 
-Run targeted tests with `python -m unittest discover -s tests -p "test_jiggle*.py"` and the Crystal tests. Optional SDEC_MATERIAL_CHECKER and RESKATE_LUAU_RUNNER paths enable checks against the runtime declaration parser and Luau solver. They are developer tools, not end-user dependencies.
+The app includes preview libraries, but does not include SDEC or the external Studio compiler. Native deck ZIP/direct export requires a separately installed shader-capable reskate_cli.exe supporting `--board-loader-from-core` and a local game installation.
 
-The built app supports `--self-test-digital <output-folder>`. A compile-config.json in that folder, with game_root and compiler paths, also checks native installable export. No game or private Studio binaries are included in this repository or in the Windows download.
+Run authoring tests with `python -m unittest discover -s tests`. Optional SDEC_MATERIAL_CHECKER and RESKATE_LUAU_RUNNER paths enable native declaration and cross-language checks. These are developer test dependencies, not requirements for running the Windows app.
 
-The authored pixel-warp and donor-surface isolation logic is in native/jiggle_shader.py. It rejects shader outputs that depend on texture bindings other than the authored atlas. Runtime payloads selected by assets/effects-runtime/manifest.json carry SHA-256 integrity checks.
+The executable supports `--self-test-shaker <new-output-folder>`. Without compile-config.json it tests project save/reload, size/weight/rim controls, grip preference and the moving preview. To also test first-run export setup and real ZIP export, put this file in that fresh output folder:
+
+```json
+{"game_root":"C:/Games/ReSkate","compiler":"C:/Tools/Studio/reskate_cli.exe"}
+```
+
+The check uses isolated settings and leaves normal user preferences alone. It selects the supplied paths through the actual first-run setup, verifies persistence, and exports grip-on/grip-off shaker decks through the real app export action. Use a fresh output folder each time; do not put an .export.json sidecar beside the tested executable.
+
+Older native/build_jiggle_preview.cmd and native/build_shaker_preview.cmd entry points remain available for developers with an existing Luau library. The CMake build above is the standalone source-build route. Luau's upstream build targets are documented in its [CMake configuration](https://github.com/luau-lang/luau/blob/master/CMakeLists.txt); this archive includes only the VM/compiler dependencies needed here.

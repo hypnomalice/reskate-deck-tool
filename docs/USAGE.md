@@ -1,26 +1,17 @@
-# ReSkate Deck Tool 1.4.0
+# Using Deck Tool 1.10.0
 
-Install one copy of [SDEC: Sofis Deck Effect Core](https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/), then import your exported deck FBMOD through Studio. Neon and multi-picture lenticular require SDEC 1.2.0 or newer. New exports contain deck artwork and settings only.
+1. Install SDEC 3.5.0 or newer and keep one copy enabled first in ReSkate's mod list.
+2. Extract the Windows tool ZIP and open ReSkate Deck Tool.exe.
+3. Add a deck, choose its effect and select artwork. Save the project to keep settings and image paths.
+4. Choose Mod ZIP, Install to game, or FBMOD. ZIP/direct installation asks for your game folder and a compatible Studio reskate_cli.exe on first use. The compiler must support `--board-loader-from-core` and is installed separately.
+5. Import the ZIP with the launcher, or close the game/launcher and use direct installation. Enable the exported pack alongside SDEC.
 
-## Effects
+For Shaker in Glass, choose a background and one to three PNG pieces. Set each piece's width, relative weight, collision shape and optional acrylic rim. Background blur and equipped grip tape are optional. PNG transparency defines an outline collision; a square image can use Rectangle. Pieces collide on one plane.
 
-- Animated / GIF: GIF, animated PNG or WebP. Up to 512 frames and 40.95 seconds; quality controls frame detail, not frame rate.
-- Lenticular: choose 2–8 pictures. Reorder them with Move up / Move down. Fine lens bands and slight overlap are intentional.
-- Depth Map: a colour image and grayscale depth map. White is near; black is far. Enable lenticular for stepped lens transitions.
-- Parallax: transparent foreground and a complete background, plus an optional transparent middle layer with independent depth.
-- Ghost Rare: depth-guided holographic sheen and silver shading.
-- Metallic Flakes: angle-dependent sparkle on one graphic.
-- Ink Flow: artwork plus a reveal mask. White receives the effect.
-- Impossible Window: transparent front frame, background and optional object layer.
-- Liquid Bottle: transparent front PNG, background, colour, cloudiness, depth, amount and visual thickness. Thickness changes ripples rather than simulating persistent viscosity.
-- Neon: artwork plus a mask PNG. White glows, black does not; grey reduces glow and transparent pixels stay unlit. Or pick an artwork colour and adjust tolerance. Brightness 100% matches the approved Neon C test. Glow colour comes from the artwork.
+Use Shake preview to see movement, Pause to inspect a pose, Dim background to see clear rims, and Reset pieces to restart the simulation. These view controls do not alter the authored deck. Save/reload retains piece settings and the grip choice.
 
-Save a project to retain settings and picture order. Export one deck or all decks as an FBMOD. Custom thumbnails and wood tint remain available. The packaged examples contain 15 test decks covering all effects and key variants.
+A deck ZIP contains native content and settings, not another copy of SDEC or a separate physics plugin. Share that ZIP with recipients who have the required core. They do not need the tool or compiler.
 
-## Existing packs
+File > Convert older packs for SDEC creates content-only copies and preserves originals. Disable the older bundled versions after conversion to avoid duplicate shared effects. SDEC does not bypass the launcher's mod conflict rules.
 
-Use File > Convert older packs for SDEC to create content-only copies, then disable their older bundled versions. Original files are preserved. Packs with their own shared scripts or shaders can still conflict; SDEC does not bypass the launcher's conflict rules.
-
-## Preview
-
-The preview illustrates atlas sampling before game lighting. Exposure, bloom, reflections, camera geometry and liquid movement can differ in game. Check wardrobe, gameplay and replay before sharing a new deck. Neon does not cast dynamic lights onto nearby objects.
+Preview lighting, glass reflections and shape are approximate. Check authored decks in ReSkate before sharing. Transparent-deck FitCheck capture remains a known limitation.

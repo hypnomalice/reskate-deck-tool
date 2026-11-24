@@ -3,3 +3,5 @@ ispc_texcomp==1.0.1
 numpy==2.5.4
 onnxruntime==1.31.0
 PySide6-Essentials==6.12.0
+
+Shapely==2.1.2

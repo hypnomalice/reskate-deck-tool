@@ -8,6 +8,8 @@ root = Path(SPECPATH)
 engine = root / 'engine'
 if not (root/'assets/jiggle-runtime/jiggle_preview.dll').is_file():
     raise SystemExit('Build native/build_jiggle_preview.cmd before packaging the Windows app.')
+if not (root/'assets/shaker-runtime/shaker_preview.dll').is_file():
+    raise SystemExit('Build native/build_shaker_preview.cmd before packaging the Windows app.')
 data = [(str(root / 'assets'), 'assets')]
 data.append((str(root / 'licenses'), 'licenses'))
 data.append((str(root / 'THIRD_PARTY_NOTICES.md'), '.'))
@@ -16,8 +18,8 @@ for folder in (engine, engine / 'depth-template'):
     data.extend([(str(folder / 'template-data'), relative + '/template-data'),
                  (str(folder / 'template-manifest.json'), relative)])
 a = Analysis([str(root / 'Lenticular Deck Creator.pyw')],
-    pathex=[str(root), str(engine)], binaries=collect_dynamic_libs('onnxruntime'),
-    datas=data, hiddenimports=['transparency_check','transparency_preview','transparency_ui','transparency_native','transparency_vertex','transparency_finish','onnxruntime.capi.onnxruntime_pybind11_state','jiggle_ui','jiggle_effect','jiggle_physics','jiggle_native','jiggle_preview','jiggle_preview_ui','jiggle_layers'],
+    pathex=[str(root), str(engine)], binaries=collect_dynamic_libs('onnxruntime')+collect_dynamic_libs('shapely'),
+    datas=data, hiddenimports=['transparency_check','transparency_preview','transparency_ui','transparency_native','transparency_vertex','transparency_finish','onnxruntime.capi.onnxruntime_pybind11_state','jiggle_ui','jiggle_effect','jiggle_physics','jiggle_native','jiggle_preview','jiggle_preview_ui','jiggle_layers','shaker_effect','shaker_native','shaker_preview','shaker_ui','shaker_check','shapely'],
     excludes=['gemstone_study','pandas', 'matplotlib', 'onnxruntime.transformers', 'onnxruntime.quantization'])
 
 # Package only the selected runtime, not archived development shader payloads.

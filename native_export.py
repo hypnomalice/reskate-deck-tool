@@ -62,13 +62,21 @@ def validate_inputs(game_root, compiler):
     return game, cli
 
 
+def supports_shared_core(compiler):
+    """Reject legacy CLIs before selecting one for modern effect exports."""
+    try:
+        return b'--board-loader-from-core' in Path(compiler).read_bytes()
+    except OSError:
+        return False
+
+
 def export_zip(projects, destination, progress=lambda message: None, *, title, author='', game_root, compiler):
     import creator_engine
     game, cli = validate_inputs(game_root, compiler)
-    core_loader = any(p.get('mode') in ('glitch', 'glass', 'case', 'crystal', 'jiggle') for p in projects)
+    core_loader = any(p.get('mode') in ('glitch', 'glass', 'case', 'crystal', 'jiggle', 'shaker') for p in projects)
     # Older CLIs treat unknown options as additional FBMOD filenames. Keep the
     # loader contract intact rather than retrying without the required option.
-    if core_loader and b'--board-loader-from-core' not in cli.read_bytes():
+    if core_loader and not supports_shared_core(cli):
         raise ValueError(
             'This Studio compiler does not support shared-core glitch/case exports. '
             'Choose an updated shader-capable reskate_cli.exe using Change export setup. '
@@ -79,7 +87,7 @@ def export_zip(projects, destination, progress=lambda message: None, *, title, a
     target.parent.mkdir(parents=True, exist_ok=True)
     # A private temporary tree prevents failed builds from replacing an existing
     # export or leaving half a mod in the game's Mods folder.
-    with tempfile.TemporaryDirectory(prefix='.deck-native-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='.deck-native-',dir=target.parent) as temporary:
         root = Path(temporary)
         content = root/'content.fbmod'
         creator_engine.export_pack(projects, content, progress, title=title, author=author, shared_runtime=True)
@@ -107,6 +115,7 @@ def export_zip(projects, destination, progress=lambda message: None, *, title, a
         jiggle_native.write_materials(projects,patch)
         import transparency_native
         transparency_native.write_materials(projects,patch)
+        __import__('shaker_native').write_materials(projects,patch)
         files = sorted(p for p in patch.rglob('*') if p.is_file())
         if any(p.is_symlink() or not p.resolve().is_relative_to(patch.resolve()) for p in files):
             raise ValueError('The compiler output contains an unexpected linked file.')
@@ -123,9 +132,8 @@ def export_zip(projects, destination, progress=lambda message: None, *, title, a
                 readme = (
                     f'{title}\n\nInstall this ZIP through the ReSkate launcher, or extract its {name} folder into Mods. '
                     'Keep one current SDEC core enabled at number 1 (the very top) of your mod list.\n'
-                    'CD depth movement requires SDEC 2.1.1 or newer; optional sheen requires 2.1.0 or newer.\n'
-                    'Glass, Clear Case and Crystal artwork transparency requires SDEC 3.4.1. Artwork Springs requires SDEC 3.1.0 or newer. Springs preview needs ReSkate 2.1.4-5 Hotfix or newer.\n'
-                    'Custom Liquid in Glass colours require SDEC 3.4.2.\n'
+                    'Use SDEC 3.5.0 or newer with decks exported by Deck Tool 1.10.0.\n'
+                    'Shaker physics is supplied by SDEC; pieces share one plane.\n'
                     'SDEC is a separate required install; it is not bundled with Deck Tool or deck exports.\n'
                     'https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/\n')
                 zipped.writestr(name+'/DECK TOOL README.txt', readme)
@@ -145,7 +153,7 @@ def export_folder(projects, destination, progress=lambda message: None, **option
     check_folder(target)
     target = target.resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.deck-folder-build-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='.deck-folder-build-',dir=target.parent) as temporary:
         archive = Path(temporary)/'native.zip'
         export_zip(projects, archive, progress, **options)
         with tempfile.TemporaryDirectory(prefix='.deck-folder-stage-', dir=target.parent) as staged:

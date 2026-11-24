@@ -50,10 +50,10 @@ def install(owner,parent,Adjustment):
 
 
 def apply(owner,deck):
-    mode=deck.get('mode');owner.transparency_box.setVisible(mode in finish.MODES)
+    shaker=deck.get('mode')=='shaker';mode='glass' if shaker else deck.get('mode');owner._transparency_is_shaker=shaker;owner.transparency_box.setVisible(mode in finish.MODES)
     if mode not in finish.MODES:return
-    cfg=finish.settings(mode,deck.get(mode));owner._transparency_mode=mode
-    choices=[('Display glass','display'),('Moving water','water'),('Liquid in glass','liquid')] if mode=='glass' else [('Hazy artwork case','frosted'),('Clear artwork case','glossy'),('Hazy PCB case','pcb')] if mode=='case' else [('Cut crystal','crystal')]
+    cfg=finish.settings(mode,dict(deck.get(mode,{}),finish='display',grip_tape=deck.get(mode,{}).get('grip_tape',True)) if shaker else deck.get(mode));owner._transparency_mode=mode
+    choices=[('Display glass','display')] if shaker else [('Display glass','display'),('Moving water','water'),('Liquid in glass','liquid')] if mode=='glass' else [('Hazy artwork case','frosted'),('Clear artwork case','glossy'),('Hazy PCB case','pcb')] if mode=='case' else [('Cut crystal','crystal')]
     combo=owner.transparency_style;combo.blockSignals(True);combo.clear()
     for label,key in choices:combo.addItem(label,key)
     key='pcb' if mode=='case' and cfg['interior']=='pcb' else cfg.get('finish','crystal')
@@ -67,13 +67,13 @@ def apply(owner,deck):
         control.setVisible(mode=='glass' and cfg.get('finish')=='liquid')
     owner.liquid_rim.set_value(cfg.get('rim_mm',10))
     owner.liquid_rim.setVisible(mode=='glass' and cfg.get('finish')=='liquid')
-    owner.transparency_grip.setChecked(cfg['grip_tape'])
+    owner.transparency_grip.setChecked(cfg['grip_tape']);owner.transparency_grip.setEnabled(True)
     refresh_legacy(owner,mode,cfg)
     owner.transparency_controls['haze'].setEnabled(not (mode=='case' and key=='glossy'))
 
 
 def remember(owner,deck):
-    mode=deck.get('mode')
+    mode='glass' if deck.get('mode')=='shaker' else deck.get('mode')
     if mode not in finish.MODES or owner._transparency_mode!=mode:return
     cfg=dict(deck.get(mode,{}))
     if mode=='case' and owner.transparency_style.currentData()=='glossy' and cfg.get('finish','frosted')!='glossy':

@@ -34,3 +34,7 @@ No example decks or personal artwork are included. Source projects and generated
 belong to their respective authors.
 
 - `assets/eink-rim-mesh.fbmod`, `assets/glitch-opaque-mesh.fbmod`, and `assets/case-shell-mesh.fbmod` contain game-derived board geometry/material templates with SDEC routing modifications. They retain the original game assets' rights; the MIT licence does not relicense them.
+
+- Shaker collision preparation uses Shapely (BSD) and its GEOS runtime (LGPL); licences are in licenses/Shapely-*. The preview embeds Luau (MIT), with its licence in licenses/Luau-MIT.txt.
+
+- The source archive includes the exact Luau VM/compiler dependency snapshot in third_party/luau, with its MIT licence and SOURCE-MANIFEST.json hashes. Upstream project: https://github.com/luau-lang/luau.

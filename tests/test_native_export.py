@@ -127,7 +127,7 @@ class NativeExportTests(unittest.TestCase):
 
     def test_old_compiler_rejected_before_digital_export(self):
         self.target.write_bytes(b'previous export')
-        for mode in ('glitch', 'case', 'glass', 'crystal'):
+        for mode in ('glitch', 'case', 'glass', 'crystal', 'jiggle', 'shaker'):
             with self.subTest(mode=mode), patch('creator_engine.export_pack') as pack, patch('native_export.subprocess.run') as run:
                 with self.assertRaisesRegex(ValueError, 'does not support shared-core'):
                     native_export.export_zip([dict(mode=mode,name="Test deck")],self.target,title='Digital',game_root=self.game,compiler=self.cli)
@@ -140,7 +140,7 @@ class NativeExportTests(unittest.TestCase):
         def compile(args,**kwargs):
             self.assertEqual(args[-1],'--board-loader-from-core')
             return self.compile(args,**kwargs)
-        for mode in ('glitch','case','glass','crystal'):
+        for mode in ('glitch','case','glass','crystal','jiggle'):
             with self.subTest(mode=mode), patch('creator_engine.export_pack',side_effect=content),patch('native_export.subprocess.run',side_effect=compile):
                 native_export.export_zip([dict(mode=mode,name="Test deck")],self.target,title='Digital',game_root=self.game,compiler=self.cli)
 

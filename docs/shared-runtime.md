@@ -1,15 +1,11 @@
 # SDEC shared effect core
 
-SDEC 3.1.0 adds Crystal and Artwork Springs. The shared spring controller lives in SDEC; native deck exports carry their three declared material inputs and authored settings. Preview updates require ReSkate 2.1.4-5 Hotfix or newer. The controller starts pose observation before material lookup and requires room, board, menu and skater.read permissions. No separate per-deck motion plugin is needed.
+Deck Tool 1.10.0 uses SDEC 3.5.0 or newer. SDEC owns shared shaders, compositor resources and motion controllers. Deck exports contain artwork, masks, thumbnails, inventory items, private material recipes and authored settings; there is no duplicate core or physics plugin per deck.
 
-SDEC owns the common shader resources, empty graphic texture, bundle lookup and compositor script. Deck content contains artwork, masks, thumbnails, inventory items and private material recipes. The tool links to SDEC rather than exporting a duplicate core beside every deck.
+Shaker in Glass supports one to three independent PNG pieces with individual width, weight, collision shape and optional acrylic rims. Pieces share one shallow plane. The tool preview and SDEC execute the same solver source. Preview inspection controls do not become authored settings.
 
-The ABI remains version 1. Existing atlas markers and material identities are retained. The approved 1.2.0 core has 22 resources, including the native single-target emission variants used by Neon. Multi-picture lenticular extends the original 112-strip transition to 2–8 images.
+Existing effect identities and atlas contracts are preserved. SDEC 3.5.0 includes bounded shaker samples and clear-case mounting bores anchored to native mesh coordinates. Existing case decks receive that correction through the shared core.
 
-`write_content_export` validates and partitions supported legacy content, then atomically writes only the requested FBMOD. It preserves original input packs. `split_pack` and the older diagnostic export API remain available for compatibility checks. These APIs do not change installed mods or load order.
+Shared program and compositor identities remain global. Central ownership prevents duplicate cores among content-only Deck Tool packs; unrelated mods replacing the same resources can still conflict. Older packs with embedded scripts or shaders may need re-exporting or conversion. The Luau API updates declared material parameters; it does not compile or replace shared shaders.
 
-## Compatibility limits
-
-Shared program and compositor identities remain global. Central ownership prevents duplication among converted Deck Tool packs but cannot isolate unrelated mods that replace the same resources. Legacy packs with embedded shaders/scripts may need re-exporting or conversion. The Luau API can update declared parameters on an owned gameplay or preview material; it cannot replace or compile the shared shader and compositor resources.
-
-The user verified the new 15-deck set in game. This is not a guarantee of compatibility with every third-party mod.
+The current Windows installation and all-effects pack passed the local combined mod audit. This is not a guarantee for every third-party mod, platform or multiplayer arrangement. SDEC remains a separate required installation.

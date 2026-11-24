@@ -10,6 +10,10 @@ if __name__ == '__main__':
         except Exception as exc:
             import ctypes
             ctypes.windll.user32.MessageBoxW(None,str(exc),'Update could not be installed',16)
+    elif len(sys.argv) == 3 and sys.argv[1] == '--self-test-shaker':
+        from shaker_check import check
+        try:check(sys.argv[2])
+        except Exception:sys.exit(1)
     elif len(sys.argv) == 3 and sys.argv[1] == '--self-test-transparency':
         from transparency_check import check
         check(sys.argv[2])

@@ -15,7 +15,7 @@ Preview glow is illustrative; the game controls exposure and bloom.
 
 All effect decks require SDEC: Sofis Deck Effect Core. Install one current copy:
 https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/
-For this local 1.4.0 build, use the matching SDEC FBMOD included in the package.
+Deck Tool 1.10.0 requires SDEC 3.5.0 or newer, installed separately.
 ''',
     'Animated GIF': '''ANIMATED GRAPHICS
 
@@ -25,7 +25,7 @@ preserves its proportions, and does not upscale small sources. Adjust placement
 changes its size and position with a playing preview. Background colour fills
 transparent areas and the rest of the deck.
 
-This beta supports 1–128 frames and loops up to 40.95 seconds. Frame timings are
+Animated decks support 1–512 frames and loops up to 40.95 seconds. Frame timings are
 rounded to 10 milliseconds. Storage resolution is reduced when needed to fit
 the game texture, so shorter clips can retain more detail. The preview cannot
 reproduce texture compression or game lighting exactly.
@@ -83,7 +83,7 @@ The current export moves the two layers continuously in the shader and stores tr
 COMBINED PACKS
 Save all desired projects, then choose Export saved deck pack, or export decks as separate mods. Five decks across two separate mods passed the first coexistence check on ReSkate 2.1.0. The creator has no fixed five-deck cap; larger collections still depend on game resources. Use distinct names for now: persistent project identities and duplicate-name handling are still being developed.
 
-Import the exported .fbmod into the shader-capable Studio build. Replace the previous version when updating the same mod; separate deck mods can coexist. Keep the old Lenticular_Camera_Probe disabled and preserve your Board Break / concave settings. The creator exports files locally; it does not install or enable mods.
+Choose Mod ZIP for a ready-to-import deck pack, Install to game for direct installation, or FBMOD for editing in Studio. Native ZIP/direct export requires a compatible external Studio compiler; SDEC is installed separately. Close ReSkate and its launcher before direct installation. Keep one core enabled first, then enable the deck pack.
 
 TROUBLESHOOTING
 Wrong depth direction: check Reverse depth.

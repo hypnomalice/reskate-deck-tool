@@ -19,7 +19,7 @@ from app_version import APP_VERSION
 from tutorials import open_guide
 
 BG, FIELD, TEXT, MUTED = '#242629', '#33373d', '#e3e5e8', '#aeb4be'
-MODES = {'gif': 'Animated / GIF', 'classic': 'Lenticular', 'depth': 'Depth Map', 'layers': 'Parallax (2–3 images)', 'ghost': 'Ghost Rare', 'metal':'Metallic Flakes', 'ink':'Ink Flow', 'window':'Impossible Window', 'liquid':'Liquid Bottle', 'neon':'Neon', 'cd':'CD Hologram','eink':'E-Ink','glitch':'Hologram Glitch','glass':'Glass','case':'Clear Case','crystal':'Crystal','jiggle':'Artwork Springs'}
+MODES = {'gif': 'Animated / GIF', 'classic': 'Lenticular', 'depth': 'Depth Map', 'layers': 'Parallax (2–3 images)', 'ghost': 'Ghost Rare', 'metal':'Metallic Flakes', 'ink':'Ink Flow', 'window':'Impossible Window', 'liquid':'Liquid Bottle', 'neon':'Neon', 'cd':'CD Hologram','eink':'E-Ink','glitch':'Hologram Glitch','glass':'Glass','case':'Clear Case','crystal':'Crystal','jiggle':'Artwork Springs','shaker':'Shaker in Glass'}
 APP_NAME = 'ReSkate Deck Tool'
 QUOTES = [
     'shoutouts shwang',
@@ -275,7 +275,7 @@ class Creator:
         footer.columnconfigure(2, weight=1, uniform='ends')
         disclaimer = tk.Label(footer, text='DISCLAIMER', bg=BG, fg=MUTED, font=('Segoe UI', 9, 'underline'))
         disclaimer.grid(row=0, column=0, sticky='w')
-        Tooltip(disclaimer, "This tool is in beta, like genuinely.\nIf something breaks, we're sorry, make\na note of it and report it")
+        Tooltip(disclaimer, "Preview lighting and geometry are approximate.\nCheck exported decks in ReSkate before sharing them.\nReport problems with your tool and SDEC versions.")
         ttk.Label(footer, textvariable=self.deck_name, anchor='center').grid(row=0, column=1, sticky='ew')
         buttons = ttk.Frame(footer)
         buttons.grid(row=0, column=2, sticky='e')

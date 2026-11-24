@@ -124,6 +124,15 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
             project['mode']='ghost';project.setdefault('cd',{})['enabled']=True
     with tempfile.TemporaryDirectory(prefix='lenticular-framing-') as scratch:
         for number, project in enumerate(projects):
+            if project.get('mode')=='shaker':
+                import shaker_effect
+                if not shared_runtime and not _texture_only:raise ValueError('Shaker needs Mod ZIP or Install to game so its geometry and settings are included.')
+                project['name']=validate_name(project['name'])
+                project['_shaker_prepared']=shaker_effect.prepare(project)
+                project['mode']='glass'
+                project['glass']=dict(project.get('glass',{}),grip_tape=project.get('glass',{}).get('grip_tape',True),finish='display')
+                project.pop('wood_tint',None)
+                continue
             if project.get('mode') in ('glass','case','crystal'):
                 import transparency_finish
                 mode=project['mode'];project[mode]=transparency_finish.settings(mode,project.get(mode))
@@ -252,7 +261,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             import image_placement
             graphic=image_placement.frame(a,fit,background,alpha=True)
             radius=transparency_finish.internal_blur_pixels(mode,cfg)
-            packed=transparency_finish.artwork_atlas(graphic,radius)
+            packed=project['_shaker_prepared']['atlas'] if project.get('_shaker_prepared') else transparency_finish.artwork_atlas(graphic,radius)
             texture=encode(packed,progress,mipmaps=False,profile='alpha_slow')
             thumb=thumbnail(graphic,graphic,custom,background=background,label={'glass':'GLASS','case':'CLEAR CASE','crystal':'CRYSTAL'}[mode])
         elif mode in ('eink','glitch'):
@@ -380,7 +389,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         import jiggle_native
         dest.write_bytes(jiggle_native.attach(dest.read_bytes(),[p['name'] for p in projects if p.get('mode')=='jiggle'],layered_names=[p['name'] for p in projects if p.get('mode')=='jiggle' and __import__('jiggle_layers').enabled(p.get('jiggle'))]))
         import transparency_native
-        dest.write_bytes(transparency_native.attach(dest.read_bytes(),projects))
+        dest.write_bytes(__import__('shaker_native').attach(transparency_native.attach(dest.read_bytes(),projects),projects))
         progress('Export complete.');return dest
     if cd_atlases:result=cd_finish.lossless_archive(result,cd_atlases)
     if rim_names:
@@ -389,7 +398,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     import jiggle_native
     result=jiggle_native.attach(result,[p['name'] for p in projects if p.get('mode')=='jiggle'],layered_names=[p['name'] for p in projects if p.get('mode')=='jiggle' and __import__('jiggle_layers').enabled(p.get('jiggle'))])
     import transparency_native
-    result=transparency_native.attach(result,projects)
+    result=__import__('shaker_native').attach(transparency_native.attach(result,projects),projects)
     temp=dest.with_name(dest.name+'.partial');temp.write_bytes(result);temp.replace(dest)
     progress('Export complete.');return dest
 

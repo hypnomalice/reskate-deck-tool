@@ -25,6 +25,11 @@ class TransparencyPreview(AtlasPreview):
     def __init__(self,atlas,mode,value=None):
         super().__init__(atlas,mode);self.optics=finish.settings(mode,value);self.clock_seconds=0.
     def set_lens_strength(self,value):pass
+    def artwork_inset(self,u,v):
+        return (u>.04)&(u<.96)&(v>.015)&(v<.985)
+    def glass_reflection(self,bu,bv,angle,wave,roughness):
+        width=.035+roughness*.18
+        return np.exp(-((bu-(.35+angle*.45+wave*.8))/width)**2)*(.12+.32*abs(angle))
     def render(self,angle,size=(210,840),region=(0,0,1,1),**kwargs):
         w,h=size;u,v=np.meshgrid((np.arange(w)+.5)/w,(np.arange(h)+.5)/h);l,t,r,b=region;u=l+u*(r-l);v=t+v*(b-t)
         left,top,right,bottom=finish.ARTWORK_REGION;bu=(u-left)/(right-left);bv=(v-top)/(bottom-top);cfg=self.optics;angle=float(np.clip(angle,-1,1));sampleu,samplev=u.copy(),v.copy()
@@ -35,7 +40,7 @@ class TransparencyPreview(AtlasPreview):
             clock=self.clock_seconds;wave=np.sin(bu*24+bv*8+clock*1.1)*.07+np.cos(bv*32-bu*7-clock*.9)*.06;sampleu+=wave*.012
         source=self.sample(np.clip(sampleu,left,right),np.clip(samplev,top,bottom)*.5)
         artwork_alpha=self.sample_alpha(np.clip(sampleu,left,right),np.clip(samplev,top,bottom)*.5)
-        inset=(bu>.04)&(bu<.96)&(bv>.015)&(bv<.985)
+        inset=self.artwork_inset(bu,bv)
         if self.mode=='case' and cfg['interior']=='pcb':
             x,z=(bu-.5)*.216,.415-bv*.818;inset=(np.abs(x)<.073)&(np.abs(z)<.31);source=np.zeros_like(source)+[.025,.19,.065];artwork_alpha=np.ones_like(artwork_alpha)
             traces=(np.abs(np.sin(x*950+z*11))>.97)&inset;source+=traces[...,None]*[.06,.075,.025]
@@ -57,7 +62,7 @@ class TransparencyPreview(AtlasPreview):
             rgba.putalpha(Image.fromarray(np.uint8(np.rint(255*alpha))))
             return rgba
         haze=0 if self.mode=='case' and cfg['finish']=='glossy' else cfg['haze'];tint=(np.array(ImageColor.getrgb(cfg['tint']))/255.)**2.2
-        rough=cfg['roughness'];width=.035+rough*.18;highlight=np.exp(-((bu-(.35+angle*.45+wave*.8))/(width))**2)*(.12+.32*abs(angle));highlight*=cfg['reflection_strength']
+        rough=cfg['roughness'];highlight=self.glass_reflection(bu,bv,angle,wave,rough)*cfg['reflection_strength']
         reflection=np.stack((highlight*.93,highlight*.98,highlight),axis=-1);source=source*(.72+.28*(1-facet[...,None]))
         rgb=source*(1-haze*.4)+tint*haze*.25+reflection;rgb=rgb*(1-cfg['tint_strength']*.12)+tint*cfg['tint_strength']*.06
         edge=np.clip((np.abs(bu-.5)-.40)/.1,0,1);coverage=np.clip(.04+.5*abs(angle)**5+edge*.45+haze*.25+facet*.16,0,1)

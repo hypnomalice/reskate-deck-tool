@@ -13,5 +13,7 @@ dist/
 last-error.txt
 
 assets/jiggle-runtime/jiggle_preview.dll
+assets/shaker-runtime/shaker_preview.dll
+native/build/
 
 !assets/transparency/*.fbmod
