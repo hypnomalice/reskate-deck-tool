@@ -14,7 +14,7 @@ Download [SDEC from Thunderstore](https://thunderstore.io/c/reskate/p/IdolRiot/S
 
 ## Per-layer holographic parallax
 
-Choose Normal or Holographic independently for the foreground, middle and background of a parallax deck. Each layer has its own 0–100% strength and area selection: Light artwork, Whole layer or Mask PNG. White mask areas receive foil, black stays normal and grey gives partial coverage. Masks follow their layer’s artwork placement.
+Choose Normal or Holographic independently for the foreground, middle and background of a parallax deck. Each layer has its own 0â€“100% strength and area selection: Light artwork, Whole layer or Mask PNG. White mask areas receive foil, black stays normal and grey gives partial coverage. Masks follow their layerâ€™s artwork placement.
 
 A normal front graphic can sit over a holographic background, or a holographic middle layer can move between two normal layers. The finish uses the donor Pearl pattern and view-dependent response. The preview uses approximate lighting; inspect the exported deck in game.
 

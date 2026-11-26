@@ -18,4 +18,4 @@ Preview lighting, glass reflections and shape are approximate. Check authored de
 
 ## Per-layer holographic parallax (1.11.0)
 
-In Effect > Parallax layer finishes, choose Normal or Holographic for each image layer. Strength is independent for every layer. Light artwork keeps dark backing normal; Whole layer coats all visible artwork; Mask PNG uses white, black and grey for full, zero and partial foil. The mask follows that layer’s placement. Use SDEC 3.6.0 or newer. See [the full guide](per-layer-holographic.md).
+In Effect > Parallax layer finishes, choose Normal or Holographic for each image layer. Strength is independent for every layer. Light artwork keeps dark backing normal; Whole layer coats all visible artwork; Mask PNG uses white, black and grey for full, zero and partial foil. The mask follows that layerâ€™s placement. Use SDEC 3.6.0 or newer. See [the full guide](per-layer-holographic.md).
