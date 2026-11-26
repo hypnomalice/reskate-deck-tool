@@ -132,7 +132,7 @@ def export_zip(projects, destination, progress=lambda message: None, *, title, a
                 readme = (
                     f'{title}\n\nInstall this ZIP through the ReSkate launcher, or extract its {name} folder into Mods. '
                     'Keep one current SDEC core enabled at number 1 (the very top) of your mod list.\n'
-                    'Use SDEC 3.5.0 or newer with decks exported by Deck Tool 1.10.0.\n'
+                    'Use SDEC 3.6.0 or newer for per-layer holographic finishes; other effects retain their existing core requirements.\n'
                     'Shaker physics is supplied by SDEC; pieces share one plane.\n'
                     'SDEC is a separate required install; it is not bundled with Deck Tool or deck exports.\n'
                     'https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/\n')

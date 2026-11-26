@@ -15,3 +15,7 @@ A deck ZIP contains native content and settings, not another copy of SDEC or a s
 File > Convert older packs for SDEC creates content-only copies and preserves originals. Disable the older bundled versions after conversion to avoid duplicate shared effects. SDEC does not bypass the launcher's mod conflict rules.
 
 Preview lighting, glass reflections and shape are approximate. Check authored decks in ReSkate before sharing. Transparent-deck FitCheck capture remains a known limitation.
+
+## Per-layer holographic parallax (1.11.0)
+
+In Effect > Parallax layer finishes, choose Normal or Holographic for each image layer. Strength is independent for every layer. Light artwork keeps dark backing normal; Whole layer coats all visible artwork; Mask PNG uses white, black and grey for full, zero and partial foil. The mask follows that layer’s placement. Use SDEC 3.6.0 or newer. See [the full guide](per-layer-holographic.md).

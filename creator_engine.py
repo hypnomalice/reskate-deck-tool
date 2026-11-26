@@ -124,6 +124,12 @@ def export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular D
             project['mode']='ghost';project.setdefault('cd',{})['enabled']=True
     with tempfile.TemporaryDirectory(prefix='lenticular-framing-') as scratch:
         for number, project in enumerate(projects):
+            if project.get('mode')=='layers':
+                import layer_finish
+                cfg=layer_finish.settings(project.get('layer_finishes'))
+                for key,mask in layer_finish.prepared_masks(project).items():
+                    target=Path(scratch)/f'{number}-foil-{key}.png';mask.save(target);cfg[key]['mask']=str(target)
+                project['layer_finishes']=cfg
             if project.get('mode')=='shaker':
                 import shaker_effect
                 if not shared_runtime and not _texture_only:raise ValueError('Shaker needs Mod ZIP or Install to game so its geometry and settings are included.')
@@ -220,14 +226,14 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
     names=set();decks=[]
     import cd_finish,hashlib
     cd_atlases={}
-    import surface_finish
+    import surface_finish,layer_finish
     base_encode=globals()['encode']
     def encode(image,progress=lambda message:None,**options):
         image=image if cd_finish.enabled(project) or project.get('mode') in ('glass','case','crystal','jiggle') else surface_finish.mark(image,project.get('surface_finish'),mode=project.get('mode'))
         if project.get('mode','classic')=='classic' and project.get('lenticular',True) and not project.get('extra_images') and not cd_finish.enabled(project) and project.get('lenticular_ridges',True):
             import normal_layer
             image=normal_layer.embed_lenticular(image,float(project.get('ridge_strength',.55)))
-        lossless=cd_finish.enabled(project) or surface_finish.smooth_depth(project) or project.get('mode') in ('eink','glitch','glass','case','crystal','jiggle') or (project.get('mode') in ('depth','layers') and surface_finish.settings(project.get('surface_finish'))['holographic'])
+        lossless=layer_finish.enabled(project) or cd_finish.enabled(project) or surface_finish.smooth_depth(project) or project.get('mode') in ('eink','glitch','glass','case','crystal','jiggle') or (project.get('mode') in ('depth','layers') and surface_finish.settings(project.get('surface_finish'))['holographic'])
         if lossless:image=image.convert('RGBA')
         if lossless:options['mipmaps']=False
         payload=base_encode(image,progress,**options)
@@ -309,6 +315,9 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
         elif mode in ['depth','layers','ghost']:
             settings=project.get('depth',{})
             if mode=='layers':
+                finish_cfg=layer_finish.settings(project.get('layer_finishes'))
+                finish_masks={key:Image.open(cfg['mask']).convert('RGBA') for key,cfg in finish_cfg.items() if cfg['finish']=='holographic' and cfg['area']=='mask' and cfg['strength']>0 and (key!='middle' or project.get('middle_image'))}
+                finish_options=dict(finishes=finish_cfg,finish_masks=finish_masks)
                 front=depth_views.layer_image(a,fit)
                 back=artwork(b,fit,background)
                 strength=settings.get('strength',.08)
@@ -317,12 +326,12 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
                 lens=settings.get('bands',.25) if project.get('lenticular',True) else 0
                 if project.get('middle_image'):
                     middle=depth_views.layer_image(project['middle_image'],fit)
-                    packed=layer_atlas.pack_three(front,middle,back,strength,project.get('layer_depths',(.1,.45,.9)),lens,reverse)
+                    packed=layer_atlas.pack_three(front,middle,back,strength,project.get('layer_depths',(.1,.45,.9)),lens,reverse,**finish_options)
                     texture=encode(packed,progress,mipmaps=False)
                     from effect_preview import AtlasPreview
                     preview=AtlasPreview(packed,'layers3');views=[preview.render(a,(256,1024)) for a in (-1,1)]
                 else:
-                    texture=encode(layer_atlas.pack(front,back,strength,motion,lens,reverse),progress)
+                    texture=encode(layer_atlas.pack(front,back,strength,motion,lens,reverse,**finish_options),progress)
                     views=depth_views.layer_views(front,back,strength,motion,reverse,progress,view_count=2)
             else:
                 image=artwork(a,fit,background)
@@ -356,7 +365,7 @@ def _export_pack(projects,dest,progress=lambda message:None,*,title="Lenticular 
             tinted=Image.merge('RGB',tuple(grain.point([min(255,round(value/average*channel*intensity)) for value in range(256)]) for channel in colour))
             progress('Preparing wood colour texture…')
             wood=b''.join(encode_thumbnail(tinted.resize((max(4,1024>>level),max(4,2048>>level)),Image.Resampling.LANCZOS)) for level in range(12))
-        continuous=surface_finish.smooth_depth(project) or mode in ('ghost','metal','ink','window','liquid','neon','eink','glitch','glass','case','crystal','jiggle') or (mode in ('depth','layers') and surface_finish.settings(project.get('surface_finish'))['holographic']) or (mode=='classic' and bool(project.get('extra_images'))) or (mode=='depth' and not project.get('lenticular',True)) or (mode=='layers' and bool(project.get('middle_image')))
+        continuous=layer_finish.enabled(project) or surface_finish.smooth_depth(project) or mode in ('ghost','metal','ink','window','liquid','neon','eink','glitch','glass','case','crystal','jiggle') or (mode in ('depth','layers') and surface_finish.settings(project.get('surface_finish'))['holographic']) or (mode=='classic' and bool(project.get('extra_images'))) or (mode=='depth' and not project.get('lenticular',True)) or (mode=='layers' and bool(project.get('middle_image')))
         decks.append(dict(name=name,mode='depth' if mode=='layers' or (mode=='classic' and project.get('extra_images')) else 'classic' if mode in ('gif','ghost','metal','ink','window','liquid','neon','eink','glitch','glass','case','crystal','jiggle') else mode,texture=texture,texture_size=packed.size if mode in ('gif','jiggle') else (512,4096),texture_mips=1 if mode=='gif' or continuous else None,resident=mode=='gif' or continuous,wood_texture=wood,thumb_small=encode_thumbnail(thumb.resize((256,256),Image.Resampling.LANCZOS)),thumb_large=encode_thumbnail(thumb)))
         if mode=='jiggle':decks[-1]['preview_atlas']=packed
     if _texture_only:

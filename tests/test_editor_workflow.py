@@ -27,9 +27,10 @@ class EditorWorkflowTests(unittest.TestCase):
     def test_case_settings_fit_default_inspector(self):
         w=self.w;w.decks[0].update(mode='case',effect_chosen=True);w.apply_deck()
         w.inspector_tabs.setCurrentIndex(1);self.app.processEvents()
-        self.assertTrue(w.case_help.wordWrap())
+        # Native transparency replaced the hidden legacy case inspector.
+        self.assertTrue(w.transparency_box.isVisible())
         self.assertEqual(w.inspectors.horizontalScrollBar().maximum(),0)
-        self.assertLessEqual(w.case_box.width(),w.inspectors.viewport().width())
+        self.assertLessEqual(w.transparency_box.width(),w.inspectors.viewport().width())
 
     def test_eink_tilt_range_roundtrips(self):
         w=self.w;w.decks[0].update(mode='eink',effect_chosen=True);w.apply_deck()

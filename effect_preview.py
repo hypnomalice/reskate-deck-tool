@@ -129,6 +129,14 @@ class AtlasPreview:
                 return pixels if index==2 else pixels*inside
             foreground,middle,background=(plane(i) for i in range(3))
             af,am=plane(0,0),plane(1,1)
+            import layer_finish
+            for index,key in enumerate(layer_finish.LAYERS):
+                coords_u=np.clip(coords[index],0,1)
+                pixels=(foreground,middle,background)[index]
+                finished=layer_finish.preview(self,pixels,(af,am,1)[index],key,coords_u,v,angle,three=True)
+                if index==0:foreground=finished
+                elif index==1:middle=finished
+                else:background=finished
             return display(foreground+(middle+background*(1-am))*(1-af))
         if self.mode in ('smooth','ghost'):
             import smooth_effect
@@ -170,6 +178,9 @@ class AtlasPreview:
             front = columns(a,front_u)*inside
             back = columns(b,back_u)
             coverage = columns(mask,front_u)[...,:1]*inside
+            import layer_finish
+            front=layer_finish.preview(self,front,coverage,'foreground',front_u,v,angle)
+            back=layer_finish.preview(self,back,1,'background',back_u,v,angle)
             return display(front + back * (1 - coverage))
         first = np.floor(position)
         second = np.minimum(first + 1, 7)

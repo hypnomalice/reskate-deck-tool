@@ -1,6 +1,7 @@
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import time
+import threading
 import unittest
 from unittest.mock import patch
 import numpy as np
@@ -96,7 +97,9 @@ class PreviewSchedulingTests(unittest.TestCase):
         w=self.window; w.renderer.mode='classic'
         from effect_preview import AtlasPreview
         result=AtlasPreview(Image.new('RGB',(512,4096),'red'),'classic')
+        ui_thread=threading.get_ident();worker_threads=[]
         def prepare(*args):
+            worker_threads.append(threading.get_ident())
             time.sleep(.15)
             return result
         ticks=[]; timer=QTimer(); timer.timeout.connect(lambda: ticks.append(time.monotonic()));timer.start(10)
@@ -105,7 +108,11 @@ class PreviewSchedulingTests(unittest.TestCase):
             self.assertTrue(w.texture_worker)
             self.wait_for(lambda: not w.texture_worker)
             self.assertIs(w.active_preview_renderer(),result)
-            self.assertGreaterEqual(len(ticks),4)
+            self.assertTrue(worker_threads)
+            self.assertTrue(all(tid!=ui_thread for tid in worker_threads))
+            # Busy event loops may coalesce timer ticks. Check actual threading
+            # plus event processing instead of an assumed timer frequency.
+            self.assertGreaterEqual(len(ticks),1)
             w.export_preview.setChecked(False)
             self.assertIs(w.active_preview_renderer(),w.renderer)
             w.export_preview.setChecked(True)

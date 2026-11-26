@@ -28,7 +28,7 @@ def _premultiply_table():
 
 
 def pack(foreground, background, strength=.08, background_motion=.5,
-         lens_texture=.35, reverse=False):
+         lens_texture=.35, reverse=False, *, finishes=None, finish_masks=None):
     strength = depth_views._unit_interval(strength, 'Depth strength')
     background_motion = depth_views._unit_interval(background_motion, 'Background motion')
     lens_texture = depth_views._unit_interval(lens_texture, 'Lens texture')
@@ -52,11 +52,12 @@ def pack(foreground, background, strength=.08, background_motion=.5,
     draw.rectangle((0, 48, 127, 63), fill=(0, 255, round(lens_texture * 255)))
     draw.rectangle((128, 48, 255, 63),
                    fill=(encode_linear(strength), encode_linear(background_motion), 255 if reverse else 0))
-    return atlas
+    import layer_finish
+    return layer_finish.mark(atlas,dict(foreground=foreground,background=background),finishes,finish_masks)
 
 
 def pack_three(foreground, middle, background, strength=.08,
-               depths=(.1, .45, .9), lens_texture=0, reverse=False):
+               depths=(.1, .45, .9), lens_texture=0, reverse=False, *, finishes=None, finish_masks=None):
     """Three independent planes; RGB masks preserve two transparent layers."""
     strength=depth_views._unit_interval(strength,'Depth strength')
     lens_texture=depth_views._unit_interval(lens_texture,'Lens texture')
@@ -81,4 +82,5 @@ def pack_three(foreground, middle, background, strength=.08,
     draw.rectangle((0,48,127,63),fill=(128,255,round(lens_texture*255)))
     draw.rectangle((128,48,255,63),fill=(encode_linear(strength),0,255 if reverse else 0))
     draw.rectangle((256,48,383,63),fill=tuple(encode_linear(v) for v in depths))
-    return atlas
+    import layer_finish
+    return layer_finish.mark(atlas,dict(foreground=foreground,middle=middle,background=background),finishes,finish_masks,three=True)

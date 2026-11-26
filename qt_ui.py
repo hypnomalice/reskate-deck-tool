@@ -388,6 +388,8 @@ class Creator(QMainWindow):
                 if piece.get('image'):piece['image']=str((Path(path).parent/piece['image']).resolve())
             if deck.get('thumbnail'):
                 deck['thumbnail'] = str((Path(path).parent/deck['thumbnail']).resolve())
+            for cfg in deck.get('layer_finishes',{}).values():
+                if cfg.get('mask'):cfg['mask']=str((Path(path).parent/cfg['mask']).resolve())
             for cfg in deck.get('ghost',{}).values():
                 if cfg.get('mask'):cfg['mask']=str((Path(path).parent/cfg['mask']).resolve())
             for key in ('mask',*__import__('jiggle_layers').FIELDS):
@@ -1028,6 +1030,7 @@ class Creator(QMainWindow):
             control=Adjustment(title,default,0,maximum);control.changed.connect(self.changed);cd_form.addRow(control);self.cd_controls[key]=control
         cd_help=QLabel('Choose a full disc or a clipped corner, then its backing and reflection response. Surface details are optional; 100% is the tested strength. Depth movement preserves the source map; 120% uses the accepted centred relief. Requires SDEC 2.1.1 or newer. Preview lighting is approximate.')
         cd_help.setWordWrap(True);cd_form.addRow(cd_help);effects.addWidget(self.cd_box)
+        __import__('layer_finish_ui').install(self,effects,Adjustment)
         self.surface_box=QGroupBox('Optional surface finish')
         surface_form=QFormLayout(self.surface_box)
         self.lens_ridges=QCheckBox('Ridged lenticular plastic')
@@ -1126,6 +1129,7 @@ class Creator(QMainWindow):
         d['cd']['normal']=dict(style=('automatic','custom','none')[self.normal_style.currentIndex()],path=self.normal_path,linked=self.normal_link.isChecked(),flip_y=self.normal_flip.isChecked(),strength=self.normal_controls['strength'].value()/100,placement={key:self.normal_controls[key].value()/(1 if key=='rotation' else 100) for key in ('zoom','x','y','rotation')})
         d['cd'].update(optics=list(cd_finish.OPTICS)[self.cd_optics.currentIndex()],clear_layer=self.cd_clear.isChecked(),stronger_backing=self.cd_backing.isChecked(),**{key:control.value()/(1 if key=='scratch_amount' else 100) for key,control in self.cd_controls.items()})
         d['lenticular_ridges']=self.lens_ridges.isChecked();d['ridge_strength']=self.lens_ridge_strength.value()/100
+        __import__('layer_finish_ui').remember(self,d)
         d['surface_finish']=dict(shimmer=self.surface_shimmer.isChecked(),strength=self.surface_strength.value()/100,smooth_depth=self.smooth_depth.isChecked(),holographic=self.surface_holo.isChecked(),holo_strength=self.surface_holo_strength.value()/100)
         d['neon']=dict(selection='colour' if self.neon_method.currentIndex() else 'mask',colour=d.get('neon',{}).get('colour','#00dfff'),tolerance=self.neon_tolerance.value()/100,brightness=self.neon_brightness.value()/100)
         for kind,(method,mask_button,mask_name,colour_button,tolerance) in self.ghost_area_controls.items():
@@ -1201,6 +1205,7 @@ class Creator(QMainWindow):
         self.cd_optics.setCurrentIndex(list(cd_finish.OPTICS).index(cd['optics']));self.cd_clear.setChecked(cd['clear_layer']);self.cd_backing.setChecked(cd['stronger_backing'])
         for key,control in self.cd_controls.items():control.set_value(cd[key]*(1 if key=='scratch_amount' else 100))
         self.lens_ridges.setChecked(d.get('lenticular_ridges',True));self.lens_ridge_strength.set_value(d.get('ridge_strength',.55)*100)
+        __import__('layer_finish_ui').apply(self,d)
         surface=surface_finish.settings(d.get('surface_finish'));self.surface_shimmer.setChecked(surface['shimmer']);self.surface_strength.set_value(surface['strength']*100);self.smooth_depth.setChecked(surface['smooth_depth'])
         self.surface_holo.setChecked(surface['holographic']);self.surface_holo_strength.set_value(surface['holo_strength']*100)
         ink=d.get('ink',{})
@@ -1309,6 +1314,7 @@ class Creator(QMainWindow):
         if cd_on:
             self.strength.hide();self.convergence.hide()
         self.surface_box.setVisible(not cd_on and mode not in ('glass','case','crystal','jiggle','shaker'))
+        __import__('layer_finish_ui').update(self)
         holo_supported=mode in ('depth','layers')
         self.surface_holo.setVisible(holo_supported);self.surface_holo_strength.setVisible(holo_supported)
         self.surface_holo_strength.setEnabled(self.surface_holo.isChecked() and not self.busy)
@@ -1661,13 +1667,15 @@ class Creator(QMainWindow):
                         atlas = engine.depth_views.pack(views,bands,balanced=True)
                         thumbs = [views[0],views[-1]]
                     elif d['mode']=='layers':
+                        import layer_finish
+                        finish_options=dict(finishes=d.get('layer_finishes'),finish_masks=layer_finish.prepared_masks(d))
                         if len(images)==3:
-                            atlas=engine.layer_atlas.pack_three(images[0],images[2],images[1],strength,d.get('layer_depths',(.1,.45,.9)),bands if d.get('lenticular',True) else 0,settings.get('invert',False))
+                            atlas=engine.layer_atlas.pack_three(images[0],images[2],images[1],strength,d.get('layer_depths',(.1,.45,.9)),bands if d.get('lenticular',True) else 0,settings.get('invert',False),**finish_options)
                             preview_mode='layers3'
                             thumb_renderer=AtlasPreview(atlas,preview_mode)
                             thumbs=[thumb_renderer.render(a,(128,512)) for a in (-1,1)]
                         else:
-                            atlas = engine.layer_atlas.pack(*images,strength,convergence,bands if d.get('lenticular',True) else 0,settings.get('invert',False))
+                            atlas = engine.layer_atlas.pack(*images,strength,convergence,bands if d.get('lenticular',True) else 0,settings.get('invert',False),**finish_options)
                             thumbs = images
                     else:
                         atlas = engine.atlas(*images)

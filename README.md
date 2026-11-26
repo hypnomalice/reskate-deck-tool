@@ -1,6 +1,6 @@
-# ReSkate Deck Tool 1.10.0
+# ReSkate Deck Tool 1.11.0
 
-Create and export effect decks for ReSkate. Install **SDEC 3.5.0 or newer** separately and keep one copy enabled first in your mod list. Deck exports contain artwork and settings; SDEC supplies the shared effects and motion controllers.
+Create and export effect decks for ReSkate. Install **SDEC 3.6.0 or newer** separately and keep one copy enabled first in your mod list. Deck exports contain artwork and settings; SDEC supplies the shared effects and motion controllers.
 
 ## Windows download
 
@@ -10,7 +10,15 @@ Choose **Mod ZIP**, **Install to game**, or **FBMOD** in Export as. On the first
 
 Import a generated ZIP through the ReSkate launcher, or extract its single mod folder into Mods. Close the game and launcher before direct installation. The tool backs up intact exports before updating them and refuses to replace unrelated or edited files.
 
-Download [SDEC from Thunderstore](https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/). If Thunderstore has not yet updated to 3.5.0, the matching [SDEC 3.5.0 ZIP is also attached to this release](https://github.com/hypnomalice/reskate-deck-tool/releases/download/v1.10.0/IdolRiot-Sofis_Deck_Effect_Core-3.5.0.zip). Update your existing core and keep one copy enabled. A deck recipient needs ReSkate, SDEC and the exported deck pack; they do not need Deck Tool or the compiler.
+Download [SDEC from Thunderstore](https://thunderstore.io/c/reskate/p/IdolRiot/Sofis_Deck_Effect_Core/). If Thunderstore has not yet updated to 3.6.0, the matching [SDEC 3.6.0 ZIP is also attached to this release](https://github.com/hypnomalice/reskate-deck-tool/releases/download/v1.11.0/IdolRiot-Sofis_Deck_Effect_Core-3.6.0.zip). Update your existing core and keep one copy enabled. A deck recipient needs ReSkate, SDEC and the exported deck pack; they do not need Deck Tool or the compiler.
+
+## Per-layer holographic parallax
+
+Choose Normal or Holographic independently for the foreground, middle and background of a parallax deck. Each layer has its own 0–100% strength and area selection: Light artwork, Whole layer or Mask PNG. White mask areas receive foil, black stays normal and grey gives partial coverage. Masks follow their layer’s artwork placement.
+
+A normal front graphic can sit over a holographic background, or a holographic middle layer can move between two normal layers. The finish uses the donor Pearl pattern and view-dependent response. The preview uses approximate lighting; inspect the exported deck in game.
+
+The older whole-board holographic overlay remains available for existing projects. Selecting a per-layer finish in the editor clears that overlay. Projects without per-layer settings retain their existing appearance. This feature requires SDEC 3.6.0 or newer; see [the layer finish guide](docs/per-layer-holographic.md).
 
 ## Shaker in Glass
 
@@ -32,4 +40,4 @@ Save a project to retain image paths, placement and effect settings. Re-export t
 
 The release was checked on Windows x64 with the current ReSkate Dev installation. Cross-platform behavior and general multiplayer visibility have not been established. FitCheck capture of transparent decks is a known limitation. The preview is a guide; inspect your deck in-game before sharing it.
 
-See [usage instructions](docs/USAGE.md), [1.10.0 release notes](docs/release-1.10.0.md), and [Windows source build instructions](docs/build-windows.md). Licences and third-party notices accompany the download. Older release notes are retained in docs for historical reference.
+See [usage instructions](docs/USAGE.md), [1.11.0 release notes](docs/release-1.11.0.md), and [Windows source build instructions](docs/build-windows.md). Licences and third-party notices accompany the download. Older release notes are retained in docs for historical reference.

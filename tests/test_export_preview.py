@@ -38,7 +38,7 @@ class ExportPreviewTests(unittest.TestCase):
             with patch.object(creator_engine,'export_texture',return_value=texture):
                 renderer = preview_texture.prepare(project,'ghost')
             from effect_preview import linear
-            np.testing.assert_array_equal(renderer.pixels,linear(decoded))
+            np.testing.assert_array_equal(renderer.pixels,linear(decoded.convert('RGB')))
 
     def test_incomplete_or_invalid_texture_is_reported(self):
         with self.assertRaises(ValueError): preview_texture.decode_bc7(b'',(16,16))
